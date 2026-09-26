@@ -7,7 +7,8 @@ const HIDE_UNTIL_FIRST_PASS =
   'img[loading="lazy"] { display: none !important; }';
 const SKIP_ATTR = "data-hf-skip-hidden-content";
 export const UPCOMING_ATTR = "data-hf-upcoming";
-const SKIP_HIDDEN_CONTENT = `[data-start]:not(video, audio, img, [${UPCOMING_ATTR}])[style*="visibility: hidden"] { content-visibility: hidden; }`;
+export const SKIPPED_CLIP = `[data-start]:not(video, audio, img, [${UPCOMING_ATTR}])[style*="visibility: hidden"]`;
+const SKIP_HIDDEN_CONTENT = `${SKIPPED_CLIP} { content-visibility: hidden; }`;
 
 type FirstPassWindow = Window & {
   __hfFirstPassHidden?: boolean;

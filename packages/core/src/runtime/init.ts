@@ -2,7 +2,7 @@
 import { installRuntimeControlBridge, postRuntimeMessage, setRuntimeProtocolFps } from "./bridge";
 import { instantTolerance } from "../clipFacts";
 import { isInClipWindow } from "./clipWindow";
-import { revealTimedClipsAfterFirstPass, UPCOMING_ATTR } from "./timedClipHide";
+import { revealTimedClipsAfterFirstPass, SKIPPED_CLIP, UPCOMING_ATTR } from "./timedClipHide";
 import { initRuntimeAnalytics, emitAnalyticsEvent } from "./analytics";
 import { injectCompositionCssVariables } from "./getVariables";
 import { createCssAdapter } from "./adapters/css";
@@ -2529,19 +2529,13 @@ export function initSandboxRuntimeModular(): void {
     return needsCapture;
   };
 
-  const applyTimedElementVisibility = (
-    currentTime: number,
-    visibilityNodes: Element[],
-    timingRevision?: number,
-  ) => {
-    const rootComp = resolveRootCompositionElement();
+  const timedVisibilityAt = (timingRevision?: number) => {
     const compositionDuration = getSafeTimelineDurationSeconds(
       state.capturedTimeline,
       0,
       timingRevision,
     );
-    let decidedTimedClip = false;
-    const visibleAt = (node: HTMLElement, time: number) =>
+    return (node: HTMLElement, time: number) =>
       isRuntimeElementVisibleAt(node, {
         currentTime: time,
         compositionDuration,
@@ -2550,6 +2544,16 @@ export function initSandboxRuntimeModular(): void {
         timelineRegistry: window.__timelines ?? {},
         resolver: timingResolverFor(true),
       });
+  };
+
+  const applyTimedElementVisibility = (
+    currentTime: number,
+    visibilityNodes: Element[],
+    timingRevision?: number,
+  ) => {
+    const rootComp = resolveRootCompositionElement();
+    let decidedTimedClip = false;
+    const visibleAt = timedVisibilityAt(timingRevision);
     const lookaheadSeconds =
       (window as { __HF_PREVIEW_LOOKAHEAD_S?: number }).__HF_PREVIEW_LOOKAHEAD_S ?? 2;
     for (const rawNode of visibilityNodes) {
@@ -2633,6 +2637,26 @@ export function initSandboxRuntimeModular(): void {
     withTimingResolver(() =>
       applyTimedElementVisibility(currentTime, visibilityNodes, timingRevision),
     );
+
+  // Images a seek to `time` would reveal undecoded: skipped with their hidden clip, or still loading.
+  const undecodedImagesShownAt = (time: number): HTMLImageElement[] =>
+    withTimingResolver(() => {
+      const rootComp = resolveRootCompositionElement();
+      const visibleAt = timedVisibilityAt();
+      const shownAt = (el: Element): boolean => {
+        for (let node: Element | null = el; node && node !== rootComp; node = node.parentElement) {
+          if (isHtmlElement(node) && node.hasAttribute("data-start") && !visibleAt(node, time))
+            return false;
+        }
+        return true;
+      };
+      return Array.from(document.images).filter(
+        (img) =>
+          img.closest('[data-start][style*="visibility: hidden"]') !== null &&
+          (img.closest(SKIPPED_CLIP) !== null || !img.complete) &&
+          shownAt(img),
+      );
+    });
 
   /**
    * Clip windows sorted by each endpoint, so a seek can ask which windows it
@@ -3402,8 +3426,39 @@ export function initSandboxRuntimeModular(): void {
     }
   };
 
+  // A paused seek that would reveal undecoded images holds the previous picture until they decode.
+  let heldSeek: { time: number; apply: () => void } | null = null;
+  const flushHeldSeek = () => {
+    const held = heldSeek;
+    heldSeek = null;
+    held?.apply();
+  };
+  const applySeek = (quantized: number, options?: { keepPlaying?: boolean }) => {
+    webAudio.stopAll();
+    clock.detachAudioSource();
+    const wasPlaying = clock.isPlaying();
+    if (wasPlaying) clock.pause();
+    clock.seek(quantized);
+    state.currentTime = clock.now();
+    state.isPlaying = false;
+    state.mediaForceSyncNextTick = true;
+    const tl = state.capturedTimeline;
+    pauseTimelineIfPossible(tl);
+    seekTimelineAndAdapters(state.currentTime);
+    runAdapters("pause");
+    if (options?.keepPlaying && wasPlaying) {
+      transport.play();
+      return;
+    }
+    syncMediaForCurrentState();
+    colorGrading.redraw();
+    paintVfx(state.currentTime);
+    postState(true);
+  };
+
   const transport: RuntimePlayerTransport = {
     play: () => {
+      flushHeldSeek();
       const tl = state.capturedTimeline;
       if (clock.isPlaying()) return;
       const dur = getSafeTimelineDurationSeconds(tl, 0);
@@ -3456,28 +3511,27 @@ export function initSandboxRuntimeModular(): void {
         Math.max(0, Number(timeSeconds) || 0),
         state.canonicalFps,
       );
-      webAudio.stopAll();
-      clock.detachAudioSource();
-      const wasPlaying = clock.isPlaying();
-      if (wasPlaying) clock.pause();
-      clock.seek(quantized);
-      state.currentTime = clock.now();
-      state.isPlaying = false;
-      state.mediaForceSyncNextTick = true;
-      const tl = state.capturedTimeline;
-      pauseTimelineIfPossible(tl);
-      seekTimelineAndAdapters(state.currentTime);
-      runAdapters("pause");
-      if (options?.keepPlaying && wasPlaying) {
-        transport.play();
+      heldSeek = null;
+      const undecoded = clock.isPlaying() ? [] : undecodedImagesShownAt(quantized);
+      if (undecoded.length === 0) {
+        applySeek(quantized, options);
         return;
       }
-      syncMediaForCurrentState();
-      colorGrading.redraw();
-      paintVfx(state.currentTime);
-      postState(true);
+      const held = { time: quantized, apply: () => applySeek(quantized, options) };
+      heldSeek = held;
+      for (const img of undecoded) {
+        img.loading = "eager";
+        for (let clip = img.closest(SKIPPED_CLIP); clip; clip = img.closest(SKIPPED_CLIP))
+          clip.setAttribute(UPCOMING_ATTR, "");
+      }
+      void Promise.all(
+        undecoded.map((img) => (img.decode ? img.decode().catch(() => {}) : undefined)),
+      ).then(() => {
+        if (heldSeek === held) flushHeldSeek();
+      });
     },
     renderSeek: (timeSeconds, options) => {
+      heldSeek = null;
       renderCaptureSeekStarted = true;
       const quantized = quantizeSeekTime(
         Math.max(0, Number(timeSeconds) || 0),
@@ -3501,7 +3555,7 @@ export function initSandboxRuntimeModular(): void {
       paintVfx(state.currentTime, { engineMode: true });
       postState(true);
     },
-    getTime: () => clock.now(),
+    getTime: () => heldSeek?.time ?? clock.now(),
     getDuration: () => {
       const dur = clock.getDuration();
       return Number.isFinite(dur) ? dur : 0;

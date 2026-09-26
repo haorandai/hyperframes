@@ -128,6 +128,36 @@ describe("runtime entry", () => {
     expect(contentSkipped(later)).toEqual([false]);
   });
 
+  it("holds a paused jump on the previous picture until the next scene's image decodes", async () => {
+    const root = mountRoot();
+    const current = timed(root, "div", "0");
+    const later = timed(root, "div", "5");
+    const plate = later.appendChild(document.createElement("img"));
+    let decoded = () => {};
+    plate.decode = () => new Promise<void>((resolve) => (decoded = resolve));
+
+    await evaluateRuntime();
+    window.__player?.seek(5.5);
+    // Any frame painted now shows the previous scene, while the next one is unskipped so its image loads.
+    expect(visibility(current, later)).toEqual(["visible", "hidden"]);
+    expect(contentSkipped(later)).toEqual([false]);
+    expect(window.__player?.getTime()).toBe(5.5);
+    decoded();
+    await vi.waitFor(() => expect(visibility(current, later)).toEqual(["hidden", "visible"]));
+  });
+
+  it("shows the jump target at once when play is pressed during the hold", async () => {
+    const root = mountRoot();
+    const current = timed(root, "div", "0");
+    const later = timed(root, "div", "5");
+    later.appendChild(document.createElement("img")).decode = () => new Promise<void>(() => {});
+
+    await evaluateRuntime();
+    window.__player?.seek(5.5);
+    window.__player?.play();
+    expect(visibility(current, later)).toEqual(["hidden", "visible"]);
+  });
+
   it("leaves nothing hidden when the runtime is evaluated a second time", async () => {
     const root = mountRoot();
     const current = timed(root, "div", "0");
