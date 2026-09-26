@@ -66,6 +66,7 @@ const contentSkipped = (...els: HTMLElement[]) =>
 
 describe("runtime entry", () => {
   afterEach(() => {
+    vi.useRealTimers();
     window.__hfRuntimeTeardown?.();
     document.head.innerHTML = "";
     document.body.innerHTML = "";
@@ -145,6 +146,27 @@ describe("runtime entry", () => {
     decoded();
     await window.__hfWaitForSeekCompletion?.();
     expect(visibility(current, later)).toEqual(["hidden", "visible"]);
+  });
+
+  it("applies a held jump after the cap when an image never decodes", async () => {
+    const root = mountRoot();
+    const current = timed(root, "div", "0");
+    const later = timed(root, "div", "5");
+    later.appendChild(document.createElement("img")).decode = () => new Promise<void>(() => {});
+
+    await evaluateRuntime();
+    const swallowed: string[] = [];
+    window.__hf = {
+      ...window.__hf,
+      onSwallowed: ({ label }: { label: string }) => swallowed.push(label),
+    };
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    window.__player?.seek(5.5);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(visibility(current, later)).toEqual(["visible", "hidden"]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(visibility(current, later)).toEqual(["hidden", "visible"]);
+    expect(swallowed).toEqual(["runtime.init.seekHoldCap"]);
   });
 
   it("shows the jump target at once when play is pressed during the hold", async () => {

@@ -3431,6 +3431,8 @@ export function initSandboxRuntimeModular(): void {
   };
 
   // A paused seek that would reveal undecoded images holds the previous picture until they decode.
+  // Capped: a request that never settles must not freeze the preview; measured jumps settle in ~200 ms.
+  const SEEK_HOLD_CAP_MS = 1000;
   let heldSeek: { time: number; apply: () => void } | null = null;
   const flushHeldSeek = () => {
     const held = heldSeek;
@@ -3528,10 +3530,19 @@ export function initSandboxRuntimeModular(): void {
         for (let clip = img.closest(SKIPPED_CLIP); clip; clip = img.closest(SKIPPED_CLIP))
           clip.setAttribute(UPCOMING_ATTR, "");
       }
+      let capTimer = 0;
+      const capped = new Promise<void>((resolve) => {
+        capTimer = window.setTimeout(() => {
+          if (heldSeek === held) swallow("runtime.init.seekHoldCap", undecoded);
+          resolve();
+        }, SEEK_HOLD_CAP_MS);
+      });
+      const decoded = Promise.all(
+        undecoded.map((img) => (img.decode ? img.decode().catch(() => {}) : undefined)),
+      );
       registerSeekCompletion(
-        Promise.all(
-          undecoded.map((img) => (img.decode ? img.decode().catch(() => {}) : undefined)),
-        ).then(() => {
+        Promise.race([decoded, capped]).then(() => {
+          window.clearTimeout(capTimer);
           if (heldSeek === held) flushHeldSeek();
         }),
       );
