@@ -2,7 +2,7 @@
 import { installRuntimeControlBridge, postRuntimeMessage, setRuntimeProtocolFps } from "./bridge";
 import { instantTolerance } from "../clipFacts";
 import { isInClipWindow } from "./clipWindow";
-import { revealTimedClipsAfterFirstPass } from "./timedClipHide";
+import { revealTimedClipsAfterFirstPass, UPCOMING_ATTR } from "./timedClipHide";
 import { initRuntimeAnalytics, emitAnalyticsEvent } from "./analytics";
 import { injectCompositionCssVariables } from "./getVariables";
 import { createCssAdapter } from "./adapters/css";
@@ -2541,6 +2541,17 @@ export function initSandboxRuntimeModular(): void {
       timingRevision,
     );
     let decidedTimedClip = false;
+    const visibleAt = (node: HTMLElement, time: number) =>
+      isRuntimeElementVisibleAt(node, {
+        currentTime: time,
+        compositionDuration,
+        canonicalFps: state.canonicalFps,
+        exportRenderSeek: Boolean(window.__HF_EXPORT_RENDER_SEEK_CONFIG),
+        timelineRegistry: window.__timelines ?? {},
+        resolver: timingResolverFor(true),
+      });
+    const lookaheadSeconds =
+      (window as { __HF_PREVIEW_LOOKAHEAD_S?: number }).__HF_PREVIEW_LOOKAHEAD_S ?? 2;
     for (const rawNode of visibilityNodes) {
       if (!isHtmlElement(rawNode)) continue;
 
@@ -2562,14 +2573,7 @@ export function initSandboxRuntimeModular(): void {
         if (nodeAffectsAudio(rawNode)) hiddenAudioDirty = true;
       }
 
-      let isVisibleNow = isRuntimeElementVisibleAt(rawNode, {
-        currentTime,
-        compositionDuration,
-        canonicalFps: state.canonicalFps,
-        exportRenderSeek: Boolean(window.__HF_EXPORT_RENDER_SEEK_CONFIG),
-        timelineRegistry: window.__timelines ?? {},
-        resolver: timingResolverFor(true),
-      });
+      let isVisibleNow = visibleAt(rawNode, currentTime);
       // Descendants must not override a hidden ancestor clip. CSS visibility can
       // otherwise leak child pixels through inactive scenes because a descendant
       // with visibility:visible escapes an ancestor's visibility:hidden.
@@ -2578,16 +2582,7 @@ export function initSandboxRuntimeModular(): void {
         while (ancestor) {
           if (ancestor === rootComp) break;
           if (isHtmlElement(ancestor) && ancestor.hasAttribute("data-start")) {
-            if (
-              !isRuntimeElementVisibleAt(ancestor, {
-                currentTime,
-                compositionDuration,
-                canonicalFps: state.canonicalFps,
-                exportRenderSeek: Boolean(window.__HF_EXPORT_RENDER_SEEK_CONFIG),
-                timelineRegistry: window.__timelines ?? {},
-                resolver: timingResolverFor(true),
-              })
-            ) {
+            if (!visibleAt(ancestor, currentTime)) {
               isVisibleNow = false;
               break;
             }
@@ -2596,6 +2591,10 @@ export function initSandboxRuntimeModular(): void {
         }
       }
       rawNode.style.visibility = isVisibleNow ? "visible" : "hidden";
+      rawNode.toggleAttribute(
+        UPCOMING_ATTR,
+        !isVisibleNow && visibleAt(rawNode, currentTime + lookaheadSeconds),
+      );
       if (!isMediaElement(rawNode) && !isImageElement(rawNode)) decidedTimedClip = true;
       if (isVideoElement(rawNode) || isImageElement(rawNode)) {
         colorGradingRuntime?.setSourceVisibility(rawNode, isVisibleNow);
