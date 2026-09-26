@@ -49,6 +49,7 @@ import {
   type PreviewApiAdapter,
 } from "../helpers/mediaProxyPreview.js";
 import { requestSubPath } from "../helpers/requestSubPath.js";
+import { lazyPreviewImages } from "../helpers/lazyPreviewImages.js";
 
 const PROJECT_SIGNATURE_META = "hyperframes-project-signature";
 const GSAP_CDN_VERSION = "3.15.0";
@@ -264,7 +265,10 @@ function injectStudioPreviewAugmentations(
   return injectStudioMotionScript(
     injectMotionPathPluginIfNeeded(
       injectGsapCdnFallback(
-        injectProjectSignature(html, resolveProjectSignature(adapter, projectDir)),
+        injectProjectSignature(
+          lazyPreviewImages(html),
+          resolveProjectSignature(adapter, projectDir),
+        ),
       ),
     ),
     projectDir,
