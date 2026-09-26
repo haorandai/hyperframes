@@ -143,7 +143,8 @@ describe("runtime entry", () => {
     expect(contentSkipped(later)).toEqual([false]);
     expect(window.__player?.getTime()).toBe(5.5);
     decoded();
-    await vi.waitFor(() => expect(visibility(current, later)).toEqual(["hidden", "visible"]));
+    await window.__hfWaitForSeekCompletion?.();
+    expect(visibility(current, later)).toEqual(["hidden", "visible"]);
   });
 
   it("shows the jump target at once when play is pressed during the hold", async () => {

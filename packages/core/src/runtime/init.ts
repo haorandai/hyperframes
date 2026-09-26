@@ -20,7 +20,11 @@ import {
   patchVideoTextureCompat,
   patchWebGLVideoTextureCompat,
 } from "./adapters/video-texture-compat";
-import { forceDispatchSeekEvent, waitForSeekCompletion } from "./adapters/seek-dispatch";
+import {
+  forceDispatchSeekEvent,
+  registerSeekCompletion,
+  waitForSeekCompletion,
+} from "./adapters/seek-dispatch";
 import { sourceTimeAt } from "../speedRamp";
 import { createWaapiAdapter } from "./adapters/waapi";
 import {
@@ -3524,11 +3528,13 @@ export function initSandboxRuntimeModular(): void {
         for (let clip = img.closest(SKIPPED_CLIP); clip; clip = img.closest(SKIPPED_CLIP))
           clip.setAttribute(UPCOMING_ATTR, "");
       }
-      void Promise.all(
-        undecoded.map((img) => (img.decode ? img.decode().catch(() => {}) : undefined)),
-      ).then(() => {
-        if (heldSeek === held) flushHeldSeek();
-      });
+      registerSeekCompletion(
+        Promise.all(
+          undecoded.map((img) => (img.decode ? img.decode().catch(() => {}) : undefined)),
+        ).then(() => {
+          if (heldSeek === held) flushHeldSeek();
+        }),
+      );
     },
     renderSeek: (timeSeconds, options) => {
       heldSeek = null;
