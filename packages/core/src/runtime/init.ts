@@ -3293,10 +3293,13 @@ export function initSandboxRuntimeModular(): void {
     if (generation !== sceneSwapGeneration) {
       throw new Error("the preview changed while this swap waited");
     }
-    // A data handler can replace a scene's parts during the wait; the swap would then act on detached copies.
-    if (swaps.some(({ oldParts }) => oldParts.some((el) => !el.isConnected))) {
-      throw new Error("a scene changed while this swap waited");
-    }
+    // A data handler or a revert callback can replace a scene's parts; the swap would then act on detached copies.
+    const refuseReplacedScenes = () => {
+      if (swaps.some(({ oldParts }) => oldParts.some((el) => !el.isConnected))) {
+        throw new Error("a scene changed while this swap waited");
+      }
+    };
+    refuseReplacedScenes();
     // Read at each use: a data handler or an animation's callback may replace the registry mid-swap.
     const timelines = () =>
       (window.__timelines ??= {}) as Record<string, RuntimeTimelineLike | undefined>;
@@ -3317,6 +3320,7 @@ export function initSandboxRuntimeModular(): void {
     const oldIds = swaps.flatMap(({ oldHost }) => compositionIdsIn(oldHost));
     const stopped = new Set<unknown>();
     const stopOldAnimations = () => {
+      const before = stopped.size;
       for (const id of oldIds) {
         // Newest first: each revert restores what the animation before it wrote.
         for (const previous of [
@@ -3333,10 +3337,14 @@ export function initSandboxRuntimeModular(): void {
           if (!old.revert) old.kill?.();
         }
       }
+      return stopped.size > before;
     };
-    stopOldAnimations();
-    // A revert fires the animation's onInterrupt, which can register or start animations; stop and check those too.
-    stopOldAnimations();
+    // A revert fires the animation's onInterrupt, which can register more; stop those too, until none appear.
+    let passes = 0;
+    while (stopOldAnimations()) {
+      if (++passes > 8) throw new Error("the old scene keeps starting animations as they stop");
+    }
+    refuseReplacedScenes();
     refuseAnyOutsideTweens();
     for (const id of oldIds) {
       delete timelines()[id];

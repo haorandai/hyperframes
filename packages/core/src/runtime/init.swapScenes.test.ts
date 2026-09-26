@@ -1096,6 +1096,45 @@ window.__timelines.a = tl;`;
     delete (window as unknown as { gsap?: unknown }).gsap;
   });
 
+  it("stops, too, what stopping a scene's timeline registers, however deep the chain", async () => {
+    const { root } = trackingRoot();
+    (window as unknown as { gsap: unknown }).gsap = { set: () => {} };
+    const reverted: number[] = [];
+    // Each revert registers a fresh scene-a timeline, three levels deep, as chained onInterrupt callbacks can.
+    const chained = (level: number): RuntimeTimelineLike =>
+      ({
+        getChildren: () => [],
+        revert: () => {
+          reverted.push(level);
+          if (level < 3) window.__timelines = { ...window.__timelines, a: chained(level + 1) };
+        },
+      }) as unknown as RuntimeTimelineLike;
+    Object.assign(made.a1!, {
+      revert: () => void (window.__timelines = { ...window.__timelines, a: chained(1) }),
+    });
+    boot([A1, B], root);
+    await tick();
+    await window.__hfSwapScenes!(preview([A2, B]).html);
+    expect(reverted).toEqual([1, 2, 3]);
+    delete (window as unknown as { gsap?: unknown }).gsap;
+  });
+
+  it("refuses when stopping a scene's timeline replaces that scene's host", async () => {
+    const { root } = trackingRoot();
+    (window as unknown as { gsap: unknown }).gsap = { set: () => {} };
+    const replaceHost = () => {
+      const live = sceneHost("a");
+      live.replaceWith(live.cloneNode(true));
+    };
+    Object.assign(made.a1!, { revert: replaceHost });
+    boot([A1, B], root);
+    await tick();
+    await expect(window.__hfSwapScenes!(preview([A2, B]).html)).rejects.toThrow(
+      "a scene changed while this swap waited",
+    );
+    delete (window as unknown as { gsap?: unknown }).gsap;
+  });
+
   it("runs the new scene scripts once every edited scene is replaced, so none binds to one still to go", async () => {
     const { root } = trackingRoot();
     const bound: Element[] = [];
