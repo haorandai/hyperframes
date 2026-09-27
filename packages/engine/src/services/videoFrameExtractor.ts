@@ -827,12 +827,7 @@ export async function extractVideoFramesRange(
   options: ExtractionOptions,
   signal?: AbortSignal,
   config?: Partial<Pick<EngineConfig, "ffmpegProcessTimeout">>,
-  /**
-   * Override the output directory for this extraction. When provided, frames
-   * are written directly into `outputDirOverride` (no per-videoId subdir).
-   * Used by the cache layer to materialize frames straight into the keyed
-   * cache entry directory.
-   */
+  /** Frames go straight here, with no per-videoId subdir (the cache layer's keyed entry). */
   outputDirOverride?: string,
 ): Promise<ExtractedFrames> {
   const ffmpegProcessTimeout = config?.ffmpegProcessTimeout ?? DEFAULT_CONFIG.ffmpegProcessTimeout;
@@ -913,9 +908,8 @@ export async function extractVideoFramesRange(
     vfFilters.push("format=nv12");
   }
   if (sampleCfrAtOutputFps) {
-    // Each slot takes the last frame starting at or before its time, within half a tick.
-    // Ticks of 2 ms or finer shift half a tick for container rounding (WebM/MKV use whole ms);
-    // 1/fps ticks don't.
+    // Each slot takes the last frame starting at or before its time. Ticks of 2 ms or finer
+    // first shift half a tick, absorbing container rounding (WebM/MKV use whole ms).
     vfFilters.push(
       "settb=intb/2",
       "setpts=PTS-lte(TB\\,0.001)",

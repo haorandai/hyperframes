@@ -58,17 +58,8 @@ export const COMPLETE_SENTINEL = ".hf-complete";
 export const GC_MARKER = ".hf-last-gc";
 
 /**
- * Current schema version. Bump when the cache-contents invariant changes.
- * v2 -> v3: one-pass VFR extraction (-fps_mode cfr) replaces the two-pass
- * VFR-to-CFR re-encode, changing frame contents for VFR sources under
- * identical key tuples. Without the bump, warm v2 entries (two-pass frames)
- * would keep being served across the deploy boundary.
- * v3 -> v4: the target fps identity is the exact FFmpeg argument instead of
- * a JavaScript number. This invalidates entries created after rational NTSC
- * rates had already been rounded to a decimal.
- * v4 -> v5: SDR frames are extracted with the colour matrix and tags Chrome reads.
- * v5 -> v6: each CFR slot samples the frame on screen at its time instead of
- * the last frame ffmpeg rounds into it, changing frames at most output rates.
+ * Current schema version. Bump it whenever extraction writes different frames for the same key,
+ * or warm entries keep serving the old frames across a deploy. Each bump's commit says why.
  */
 export const SCHEMA_PREFIX = "hfcache-v6-";
 
