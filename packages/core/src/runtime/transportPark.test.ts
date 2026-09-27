@@ -123,6 +123,12 @@ describe("parked transport loop", () => {
     return frames;
   };
 
+  /** One frame at 120 Hz: the clock and the animation frame advance together. */
+  const frame120Hz = () => {
+    vi.advanceTimersByTime(8);
+    raf.step(8);
+  };
+
   /**
    * Park the transport AND drain init's own one-shot timers, several of which
    * post state and would otherwise be mistaken for a heartbeat. Leaves exactly
@@ -497,14 +503,10 @@ describe("parked transport loop", () => {
     initSandboxRuntimeModular();
     quiesce();
     window.__player!.play();
-    const frame = () => {
-      vi.advanceTimersByTime(8);
-      raf.step(8);
-    };
     // Past the rebind policy's play hold, at 120 Hz.
-    for (let i = 0; i < 300; i += 1) frame();
+    for (let i = 0; i < 300; i += 1) frame120Hz();
     const before = posted.filter((m) => m["type"] === "timeline").length;
-    for (let i = 0; i < 250; i += 1) frame();
+    for (let i = 0; i < 250; i += 1) frame120Hz();
     expect(posted.filter((m) => m["type"] === "timeline").length - before).toBe(0);
   });
 
@@ -513,15 +515,11 @@ describe("parked transport loop", () => {
     initSandboxRuntimeModular();
     quiesce();
     window.__player!.play();
-    const frame = () => {
-      vi.advanceTimersByTime(8);
-      raf.step(8);
-    };
-    for (let i = 0; i < 300; i += 1) frame();
+    for (let i = 0; i < 300; i += 1) frame120Hz();
     const root = document.getElementById("root")!;
     root.setAttribute("data-width", "640");
     await flushObservers();
-    for (let i = 0; i < 60; i += 1) frame();
+    for (let i = 0; i < 60; i += 1) frame120Hz();
     expect(root.style.width).toBe("640px");
   });
 
