@@ -1,11 +1,12 @@
 import { postRuntimeMessage } from "./bridge";
 import { swallow } from "./diagnostics";
-import { evictMediaSyncState } from "./media";
+import { evictMediaSyncState, HOLD_CAP_MS } from "./media";
 import { findInjectedRenderFrame } from "./renderFrameSibling";
 import type { RuntimeJson } from "./types";
 import { isVideoElement } from "./domRealm";
 import { swappedElements } from "./proxySrc";
 import { waitForServedProxy } from "./proxyWait";
+import { registerSeekCompletion } from "./adapters/seek-dispatch";
 
 /**
  * One entry per project-root-relative asset pathname, injected by the
@@ -233,7 +234,7 @@ export function swapToProxy(
   const originalAttr = el.getAttribute("src");
   proxyRequested.set(el, originalAttr);
   const live = () => el.isConnected && el.getAttribute("src") === originalAttr;
-  void waitForServedProxy(proxiedSrc, live).then((served) => {
+  const swap = waitForServedProxy(proxiedSrc, live).then((served) => {
     if (!live()) {
       if (proxyRequested.get(el) === originalAttr) proxyRequested.delete(el);
       return;
@@ -247,7 +248,13 @@ export function swapToProxy(
     evictMediaSyncState(el);
     el.src = proxiedSrc;
     el.load();
+    return new Promise((landed) => {
+      el.addEventListener("loadeddata", landed, { once: true });
+      el.addEventListener("error", landed, { once: true });
+    });
   });
+  // A frame capture holds for the copy as it held for a loading video before, up to the same cap.
+  registerSeekCompletion(Promise.race([swap, new Promise((cap) => setTimeout(cap, HOLD_CAP_MS))]));
   const codecName = entry?.codecName ?? null;
   const details: Record<string, RuntimeJson> = {
     asset: originalSrc,

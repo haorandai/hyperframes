@@ -23,6 +23,7 @@ vi.mock("./bridge", () => ({
 }));
 
 import { postRuntimeMessage } from "./bridge";
+import { resetSeekDispatchState, waitForSeekCompletion } from "./adapters/seek-dispatch";
 
 const postRuntimeMessageMock = vi.mocked(postRuntimeMessage);
 
@@ -77,6 +78,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetSeekDispatchState();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
@@ -656,6 +658,37 @@ describe("waiting for the proxy copy", () => {
     await vi.advanceTimersByTimeAsync(3_000);
     expect(route).toHaveBeenCalledTimes(2);
     expect(isProxied(el)).toBe(true);
+  });
+
+  it("holds frame captures until a served copy shows its first frame", async () => {
+    vi.useFakeTimers();
+    stubProxyRoute(206);
+    const el = createVideo("/video.mp4");
+    swapToProxy(el, HEVC_ENTRY, "proactive");
+    let captured = false;
+    void waitForSeekCompletion().then(() => (captured = true));
+
+    await vi.advanceTimersByTimeAsync(100);
+    expect(isProxied(el)).toBe(true);
+    expect(captured).toBe(false);
+    el.dispatchEvent(new Event("loadeddata"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(captured).toBe(true);
+  });
+
+  it("holds frame captures for a copy still being made no longer than a loading video", async () => {
+    vi.useFakeTimers();
+    stubProxyRoute(202);
+    const el = createVideo("/video.mp4");
+    swapToProxy(el, HEVC_ENTRY, "proactive");
+    let captured = false;
+    void waitForSeekCompletion().then(() => (captured = true));
+
+    await vi.advanceTimersByTimeAsync(4_900);
+    expect(captured).toBe(false);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(captured).toBe(true);
+    expect(isProxied(el)).toBe(false);
   });
 
   it("stops waiting when the element leaves the document", async () => {
