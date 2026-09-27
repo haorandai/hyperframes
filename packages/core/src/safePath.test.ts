@@ -212,7 +212,16 @@ describe("mkdirWithinProject", () => {
 
   it("creates a folder outside the project as before", () => {
     const parent = tempDir();
+    mkdirSync(join(parent, "film"));
     mkdirWithinProject(join(parent, "film"), join(parent, "cache", "renders"));
     expect(existsSync(join(parent, "cache", "renders"))).toBe(true);
+  });
+
+  it("creates no folder outside the project once the project folder is gone", () => {
+    const parent = tempDir();
+    expect(() => mkdirWithinProject(join(parent, "film"), join(parent, "renders"))).toThrow(
+      /Project folder not found/,
+    );
+    expect(existsSync(join(parent, "renders"))).toBe(false);
   });
 });
