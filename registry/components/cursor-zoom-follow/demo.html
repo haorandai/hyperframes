@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
-  Zoom Follow Cursor, standalone demo: a screen recording framed on a wallpaper. The mounted
-  screen is the built-in dashboard; clicks land at 1.3s, 2.7s and 4.1s.
+  Zoom Follow Cursor, standalone demo: a screen recording framed on a flat dark ground. The mounted
+  screen is the built-in dashboard; clicks land at 0.95s, 2.55s and 3.65s.
 -->
 <html lang="en">
   <head>
@@ -27,9 +27,7 @@
         width: 1920px;
         height: 1080px;
         overflow: hidden;
-        background:
-          radial-gradient(900px 700px at 15% 20%, #8b9cff 0%, transparent 60%),
-          radial-gradient(900px 800px at 90% 90%, #ff9ec7 0%, transparent 60%), #c9c3f5;
+        background: #111318;
       }
       .window {
         position: absolute;
@@ -40,8 +38,8 @@
         border-radius: 22px;
         overflow: hidden;
         box-shadow:
-          0 40px 110px rgba(40, 30, 90, 0.35),
-          0 0 0 1px rgba(255, 255, 255, 0.5);
+          0 0 0 1px #2a2d35,
+          0 24px 64px rgba(0, 0, 0, 0.5);
       }
     </style>
   </head>
@@ -52,16 +50,16 @@
       data-start="0"
       data-width="1920"
       data-height="1080"
-      data-duration="6"
+      data-duration="5.8"
     >
       <div
         class="window clip"
         id="cursor-zoom-follow"
         data-composition-id="cursor-zoom-follow"
         data-composition-src="./cursor-zoom-follow.html"
-        data-variable-values='{"zoom":1.8,"accent":"#4f5bff"}'
+        data-variable-values='{"zoom":1.8,"accent":"#0a84ff"}'
         data-start="0"
-        data-duration="6"
+        data-duration="5.8"
         data-track-index="0"
         data-width="1600"
         data-height="900"
