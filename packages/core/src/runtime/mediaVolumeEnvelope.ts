@@ -227,17 +227,23 @@ function namesVolume(vars: unknown, depth = 0): boolean {
   );
 }
 
+const isDomNode = (target: unknown): boolean =>
+  typeof (target as { nodeType?: unknown } | null)?.nodeType === "number";
+
 /**
- * Whether seeking `timeline` can move `el.volume`. The probe seeks with events suppressed, so only a
- * tween on the element that names `volume` (keyframes included) can; a timeline without tween
- * introspection is sampled as before.
+ * Whether seeking `timeline` can move `el.volume`: a tween on the element that names `volume`, or any tween
+ * on a non-DOM object, whose setter may write it. Only an all-DOM timeline that never names it is skipped.
  */
 function timelineCanMoveVolume(timeline: RuntimeTimelineRef, el: HTMLMediaElement): boolean {
   if (typeof timeline.getChildren !== "function") return true;
   try {
-    return timeline
-      .getChildren(true, true, false)
-      .some((tween) => (tween.targets?.() ?? []).includes(el) && namesVolume(tween.vars));
+    return timeline.getChildren(true, true, false).some((tween) => {
+      const targets: unknown[] = tween.targets?.() ?? [];
+      return (
+        targets.some((target) => !isDomNode(target)) ||
+        (targets.includes(el) && namesVolume(tween.vars))
+      );
+    });
   } catch {
     return true;
   }

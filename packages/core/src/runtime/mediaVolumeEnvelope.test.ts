@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import gsap from "gsap";
 import { describe, expect, it } from "vitest";
 import {
   interpolateVolumeGain,
@@ -165,6 +166,31 @@ describe("probeAndCacheElementVolume", () => {
 
     expect(seekCount).toBe(0);
     expect(cache.has(audio)).toBe(false);
+  });
+
+  it("samples a gain tweened through a plain-object proxy that writes the element's volume", () => {
+    const audio = document.createElement("audio");
+    audio.dataset.start = "0";
+    audio.dataset.duration = "1";
+    audio.dataset.volume = "0";
+    document.body.append(audio);
+    const proxy = {
+      get gain() {
+        return audio.volume;
+      },
+      set gain(value: number) {
+        audio.volume = value;
+      },
+    };
+    const timeline = gsap.timeline({ paused: true });
+    timeline.fromTo(proxy, { gain: 0 }, { gain: 0.75, duration: 1, ease: "none" }, 0);
+    const cache = new WeakMap<HTMLMediaElement, { time: number; volume: number }[]>();
+
+    probeAndCacheElementVolume(audio, timeline, 1, cache);
+
+    const envelope = cache.get(audio);
+    expect(envelope).toBeDefined();
+    expect(interpolateVolumeGain(envelope!, 0.5)).toBeCloseTo(0.375, 3);
   });
 
   it("still samples a keyframed volume tween on the element", () => {
