@@ -473,6 +473,16 @@ async function transcodeToCache(
   }
 }
 
+let settledProxyCount = 0;
+
+/** Null while a copy for this project is being made; otherwise a mark that moves when any copy finishes. */
+export function proxyActivityMark(projectDir: string): string | null {
+  if (!existsSync(projectDir)) return String(settledProxyCount);
+  const cacheDir = join(realpathSync(projectDir), CACHE_DIR_NAME) + sep;
+  for (const cachePath of inFlight.keys()) if (cachePath.startsWith(cacheDir)) return null;
+  return String(settledProxyCount);
+}
+
 /**
  * Resolves the cached proxy variant for `absoluteSourcePath`, transcoding it at
  * most once per cache key. Concurrent calls for the same key (including a
@@ -510,6 +520,7 @@ export async function resolveProxy(
     })
     .finally(() => {
       inFlight.delete(cachePath);
+      settledProxyCount += 1;
     });
   inFlight.set(cachePath, promise);
   return promise;

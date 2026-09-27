@@ -568,6 +568,30 @@ describe("resolveProxy", () => {
     expect(probe).toHaveBeenCalledTimes(1);
   });
 
+  it("marks a project's copy as in flight, and moves the mark once it lands", async () => {
+    const { spawn, calls } = createSpawnSpy();
+    const { resolveProxy, proxyActivityMark } = await loadWithSlowProbe(
+      spawn,
+      () => FFMPEG_PATH,
+      async () => ({ kind: "video", color: { isHdr: false } }),
+    );
+    const projectDir = tmpProject();
+    const otherProjectDir = tmpProject();
+    const sourcePath = join(projectDir, "video.mov");
+    writeFileSync(sourcePath, "source-bytes");
+    const before = proxyActivityMark(projectDir);
+
+    const copy = resolveProxy(projectDir, sourcePath);
+    expect(proxyActivityMark(projectDir)).toBeNull();
+    expect(proxyActivityMark(otherProjectDir)).toBe(before);
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    succeed(calls[0]!);
+    await copy;
+    expect(proxyActivityMark(projectDir)).not.toBeNull();
+    expect(proxyActivityMark(projectDir)).not.toBe(before);
+    expect(proxyActivityMark(join(projectDir, "missing"))).not.toBeNull();
+  });
+
   it("rejects sources outside the project before probing or spawning", async () => {
     const { spawn, calls } = createSpawnSpy();
     const { resolveProxy, ProxySourceOutsideProjectError } = await loadModule(spawn, FFMPEG_PATH);

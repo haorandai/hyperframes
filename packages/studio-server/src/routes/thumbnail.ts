@@ -23,6 +23,7 @@ import { STUDIO_MOTION_PATH } from "../helpers/studioMotionRenderScript.js";
 import { thumbnailGenerationCoordinator } from "./thumbnailGenerationCoordinator.js";
 import { requestSubPath } from "../helpers/requestSubPath.js";
 import { resolveWithinProject } from "../helpers/safePath.js";
+import { proxyActivityMark } from "../helpers/proxyTranscoder.js";
 
 const THUMBNAIL_CACHE_VERSION = "v4";
 const THUMBNAIL_MAX_OUTPUT_WIDTH = 240;
@@ -216,6 +217,7 @@ export function registerThumbnailRoutes(api: Hono, adapter: StudioApiAdapter): v
         cachePath,
         c.req.raw.signal,
         async (signal) => {
+          const previewCopiesAtStart = proxyActivityMark(project.dir);
           const generated = await adapter.generateThumbnail!({
             project,
             compPath,
@@ -231,11 +233,14 @@ export function registerThumbnailRoutes(api: Hono, adapter: StudioApiAdapter): v
             signal,
           });
           if (!generated) return null;
+          const previewCopiesAtEnd = proxyActivityMark(project.dir);
           const afterGeneration = await resolveProjectAndSignature(adapter, project.id);
           const inputsUnchanged = (signature: string) =>
             compositionInputSignature(project.dir, compPath, signature) === inputSignature;
           // Both the adapter's signature and a fresh one: the adapter's can lag the watcher.
           if (
+            previewCopiesAtStart === null ||
+            previewCopiesAtEnd !== previewCopiesAtStart ||
             afterGeneration?.project.dir !== project.dir ||
             !inputsUnchanged(afterGeneration.signature) ||
             !inputsUnchanged(createProjectSignature(project.dir))
