@@ -535,6 +535,23 @@ describe("parked transport loop", () => {
     ]);
   });
 
+  it("posts a label edited while playing and paused before the next poll", async () => {
+    mount('<div id="clip" data-start="0" data-duration="5" data-timeline-label="Before"></div>');
+    initSandboxRuntimeModular();
+    quiesce();
+    window.__player!.play();
+    for (let i = 0; i < 300; i += 1) frame120Hz();
+    document.getElementById("clip")!.setAttribute("data-timeline-label", "After");
+    await flushObservers();
+    for (let i = 0; i < 12; i += 1) frame120Hz();
+    window.__player!.pause();
+    for (let i = 0; i < 300; i += 1) frame120Hz();
+    const clips = (posted.filter((m) => m["type"] === "timeline").at(-1)?.["clips"] ?? []) as Array<
+      Record<string, unknown>
+    >;
+    expect(clips.find((c) => c["id"] === "clip")?.["timelineLabel"]).toBe("After");
+  });
+
   it("applies a data-width change while playing", async () => {
     mount();
     initSandboxRuntimeModular();

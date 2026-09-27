@@ -3763,6 +3763,7 @@ export function initSandboxRuntimeModular(): void {
   let lastChangeDrivenServiceAtMs = Number.NEGATIVE_INFINITY;
   let lastPlayingPollAtMs = Number.NEGATIVE_INFINITY;
   let playingPollWitness = "";
+  let lastTickPlaying = false;
 
   const seekRuntimeTimeline = (
     timeline: RuntimeTimelineLike,
@@ -4137,6 +4138,8 @@ export function initSandboxRuntimeModular(): void {
       const nowMs = Date.now();
       const playing = clock.isPlaying();
       const playingPollDue = playing && nowMs - lastPlayingPollAtMs >= PLAYING_POLL_INTERVAL_MS;
+      const stoppedPlaying = lastTickPlaying && !playing;
+      lastTickPlaying = playing;
       if (playingPollDue) {
         lastPlayingPollAtMs = nowMs;
         const witness = readParkedPollWitness();
@@ -4192,7 +4195,7 @@ export function initSandboxRuntimeModular(): void {
         // change happens to wake the loop again.
         postTimeline();
         compositionChangePending = false;
-      } else if (playingPollDue) {
+      } else if (playingPollDue || stoppedPlaying) {
         postTimelineIfManifestChanged();
       }
       if (changeDrivenService || pausedCounterDue(MEDIA_BIND_INTERVAL_FRAMES)) {
