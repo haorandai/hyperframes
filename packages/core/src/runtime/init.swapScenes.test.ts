@@ -1168,6 +1168,35 @@ window.__timelines.a = tl;`;
     expect(sceneHost("a").querySelector(".caption-group")).not.toBeNull();
   });
 
+  it("refuses a swap whose scene moved as a block with both its neighbours while its caption overrides loaded", async () => {
+    const [p, q, r, s] = ["p", "q", "r", "s"].map(() => document.createElement("div"));
+    // The film reads P, a, Q, R, S, b.
+    const arrange = () => {
+      sceneHost("a").before(p!);
+      sceneHost("a").after(q!, r!, s!);
+    };
+    const { swap, answer } = await bootWithPendingCaptions(undefined, arrange);
+    // Now R, P, a, Q, S, b: every neighbour, the scene order and the ancestors are unchanged.
+    r!.after(p!, sceneHost("a"), q!);
+    answer(new Response("null", { status: 404 }));
+    await expect(swap).rejects.toThrow("a scene changed while this swap waited");
+  });
+
+  it("refuses a swap whose scene's wrapper left the film with no other scene beside it while its caption overrides loaded", async () => {
+    let wrapper!: HTMLElement;
+    const [before, after] = [document.createElement("div"), document.createElement("div")];
+    // The film reads X, [a], Y, b: the wrapper's neighbours are plain elements.
+    const arrange = () => {
+      wrapper = wrapA();
+      wrapper.before(before);
+      wrapper.after(after);
+    };
+    const { swap, answer } = await bootWithPendingCaptions(undefined, arrange);
+    document.body.appendChild(wrapper);
+    answer(new Response("null", { status: 404 }));
+    await expect(swap).rejects.toThrow("a scene changed while this swap waited");
+  });
+
   it("refuses a swap whose scene style moved to another parent while its caption overrides loaded", async () => {
     const { swap, answer } = await bootWithPendingCaptions();
     // The new style would take the moved one's place, out of cascade order.

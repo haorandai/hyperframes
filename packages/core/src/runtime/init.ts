@@ -3292,29 +3292,23 @@ export function initSandboxRuntimeModular(): void {
         newHost,
       };
     });
-    // The runtime marks the elements it inserts beside media, such as grading canvases, as ignored.
-    const sibling = (el: Element, step: "previousElementSibling" | "nextElementSibling") => {
-      let next = el[step];
-      while (next?.hasAttribute("data-hf-ignore")) next = next[step];
-      return next;
-    };
-    // Each scene host in page order, with its ancestors and their neighbours up to the film root, or null past it.
+    // Each parent on a scene host's way up to the film root, once, with its children in order. The runtime marks
+    // what it inserts beside media, such as grading canvases, as ignored.
     const sceneLayout = () => {
       const film = resolveRootCompositionElement();
-      const layout: (Node | null)[] = [];
+      const parents = new Set<Element>();
       for (const el of document.querySelectorAll(`[${SCENE_PART_ATTR}]`)) {
         if (el.tagName === "STYLE" || el.tagName === "SCRIPT") continue;
-        let node: Element | null = el;
-        for (; node && node !== film; node = node.parentElement) {
-          layout.push(
-            node,
-            sibling(node, "previousElementSibling"),
-            sibling(node, "nextElementSibling"),
-          );
+        let node = el.parentElement;
+        for (; node; node = node === film ? null : node.parentElement) {
+          parents.add(node);
         }
-        layout.push(node);
       }
-      return layout;
+      return [...parents].flatMap((parent) => [
+        parent,
+        ...Array.from(parent.children).filter((child) => !child.hasAttribute("data-hf-ignore")),
+        null,
+      ]);
     };
     const layout = sceneLayout();
     // Fetched before the first write, so a stalled or failed request leaves the page as it was.
