@@ -173,19 +173,19 @@ const cssText = () =>
   [...document.head.querySelectorAll("style")].map((s) => s.textContent).join("");
 
 // Boots A1 and B, then starts swapping in a captioned A whose caption overrides have not arrived.
-async function bootWithPendingCaptions(signal?: AbortSignal, arrange = () => {}) {
+async function bootWithPendingCaptions(signal?: AbortSignal, arrange = () => {}, others = [B]) {
   const { root } = trackingRoot();
   (window as unknown as { gsap: unknown }).gsap = { set: () => {} };
   let answer: (r: Response) => void = () => {};
   vi.spyOn(globalThis, "fetch").mockImplementation(
     () => new Promise<Response>((resolve) => (answer = resolve)),
   );
-  boot([A1, B], root);
+  boot([A1, ...others], root);
   await tick();
   arrange();
   const before = document.documentElement.innerHTML;
   const captions: Scene = { ...A2, body: '<div class="caption-group"><span>w</span></div>' };
-  const swap = window.__hfSwapScenes!(preview([captions, B]).html, signal);
+  const swap = window.__hfSwapScenes!(preview([captions, ...others]).html, signal);
   return { swap, before, answer: (r: Response) => answer(r) };
 }
 
@@ -1099,6 +1099,79 @@ window.__timelines.a = tl;`;
     const { swap, answer } = await bootWithPendingCaptions(undefined, wrap);
     // The host keeps its parent; the parent leaves the film.
     document.body.appendChild(wrapper);
+    answer(new Response("null", { status: 404 }));
+    await expect(swap).rejects.toThrow("a scene changed while this swap waited");
+  });
+
+  const filmRoot = () => document.querySelector<HTMLElement>("[data-root]")!;
+  const wrapA = () => {
+    const wrapper = document.createElement("div");
+    sceneHost("a").before(wrapper);
+    wrapper.append(sceneHost("a"));
+    return wrapper;
+  };
+
+  it("refuses a swap whose scene's wrapper moved past the next scene while its caption overrides loaded", async () => {
+    let wrapper!: HTMLElement;
+    const { swap, answer } = await bootWithPendingCaptions(
+      undefined,
+      () => void (wrapper = wrapA()),
+    );
+    // A keeps its parent and its next sibling (none) and stays in the film; only the order changes.
+    sceneHost("b").after(wrapper);
+    answer(new Response("null", { status: 404 }));
+    await expect(swap).rejects.toThrow("a scene changed while this swap waited");
+  });
+
+  it("refuses a swap whose scene moved with its neighbour as a pair while its caption overrides loaded", async () => {
+    const C: Scene = { id: "c", start: 5, body: "<p>C</p>", css: ".c{}", label: "n2", hash: "hc" };
+    const { swap, answer } = await bootWithPendingCaptions(undefined, undefined, [B, C]);
+    // A's next sibling is still B; the pair now comes after C.
+    filmRoot().append(sceneHost("a"), sceneHost("b"));
+    answer(new Response("null", { status: 404 }));
+    await expect(swap).rejects.toThrow("a scene changed while this swap waited");
+  });
+
+  it("refuses a swap whose scene's wrapper moved into another container in the film while its caption overrides loaded", async () => {
+    let wrapper!: HTMLElement;
+    const container = document.createElement("div");
+    const arrange = () => {
+      wrapper = wrapA();
+      wrapper.after(container);
+    };
+    const { swap, answer } = await bootWithPendingCaptions(undefined, arrange);
+    // Same order, same parent and next sibling for A, still in the film: only its ancestors changed.
+    container.append(wrapper);
+    answer(new Response("null", { status: 404 }));
+    await expect(swap).rejects.toThrow("a scene changed while this swap waited");
+  });
+
+  it("refuses a swap whose scene moved before a background in the film while its caption overrides loaded", async () => {
+    const background = document.createElement("div");
+    const { swap, answer } = await bootWithPendingCaptions(undefined, () =>
+      filmRoot().prepend(background),
+    );
+    // Scene order and ancestors are unchanged; A now sits under the background instead of over it.
+    background.before(sceneHost("a"));
+    answer(new Response("null", { status: 404 }));
+    await expect(swap).rejects.toThrow("a scene changed while this swap waited");
+  });
+
+  it("swaps a scene beside which the runtime inserted one of its own elements while its caption overrides loaded", async () => {
+    const { swap, answer } = await bootWithPendingCaptions();
+    // As colour grading does for a graded video beside the scene.
+    const canvas = document.createElement("canvas");
+    canvas.setAttribute("data-hf-ignore", "");
+    sceneHost("a").after(canvas);
+    answer(new Response("null", { status: 404 }));
+    await swap;
+    expect(sceneHost("a").querySelector(".caption-group")).not.toBeNull();
+  });
+
+  it("refuses a swap whose scene style moved to another parent while its caption overrides loaded", async () => {
+    const { swap, answer } = await bootWithPendingCaptions();
+    // The new style would take the moved one's place, out of cascade order.
+    document.body.appendChild(document.querySelector('style[data-hf-scene="a"]')!);
     answer(new Response("null", { status: 404 }));
     await expect(swap).rejects.toThrow("a scene changed while this swap waited");
   });

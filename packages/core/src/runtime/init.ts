@@ -3287,13 +3287,36 @@ export function initSandboxRuntimeModular(): void {
         name,
         oldParts,
         homes: oldParts.map((el) => el.parentNode),
-        hostNext: oldHost.nextSibling,
-        inFilm: !!resolveRootCompositionElement()?.contains(oldHost),
         newParts,
         oldHost,
         newHost,
       };
     });
+    // The runtime marks the elements it inserts beside media, such as grading canvases, as ignored.
+    const sibling = (el: Element, step: "previousElementSibling" | "nextElementSibling") => {
+      let next = el[step];
+      while (next?.hasAttribute("data-hf-ignore")) next = next[step];
+      return next;
+    };
+    // Each scene host in page order, with its ancestors and their neighbours up to the film root, or null past it.
+    const sceneLayout = () => {
+      const film = resolveRootCompositionElement();
+      const layout: (Node | null)[] = [];
+      for (const el of document.querySelectorAll(`[${SCENE_PART_ATTR}]`)) {
+        if (el.tagName === "STYLE" || el.tagName === "SCRIPT") continue;
+        let node: Element | null = el;
+        for (; node && node !== film; node = node.parentElement) {
+          layout.push(
+            node,
+            sibling(node, "previousElementSibling"),
+            sibling(node, "nextElementSibling"),
+          );
+        }
+        layout.push(node);
+      }
+      return layout;
+    };
+    const layout = sceneLayout();
     // Fetched before the first write, so a stalled or failed request leaves the page as it was.
     const captionOverrides = swaps.some(({ newHost }) => newHost.querySelector(".caption-group"))
       ? await fetchCaptionOverrides()
@@ -3305,13 +3328,11 @@ export function initSandboxRuntimeModular(): void {
     }
     // A data handler or a revert callback can replace or move a scene's parts; the swap would then lose the scene.
     const refuseReplacedScenes = () => {
-      const film = resolveRootCompositionElement();
-      // The host's place is checked; old scripts are removed and new ones appended, so theirs never matters.
-      const moved = ({ oldParts, homes, oldHost, hostNext, inFilm }: (typeof swaps)[number]) =>
-        (inFilm && !film?.contains(oldHost)) ||
-        oldHost.nextSibling !== hostNext ||
+      const moved = ({ oldParts, homes }: (typeof swaps)[number]) =>
         oldParts.some((el, i) => !el.isConnected || el.parentNode !== homes[i]);
-      if (swaps.some(moved)) {
+      const now = sceneLayout();
+      const relaidOut = now.length !== layout.length || now.some((node, i) => node !== layout[i]);
+      if (relaidOut || swaps.some(moved)) {
         throw new Error("a scene changed while this swap waited");
       }
     };
