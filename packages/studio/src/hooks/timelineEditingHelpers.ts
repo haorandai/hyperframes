@@ -15,7 +15,9 @@ import { getElementZIndex } from "../player/lib/layerOrdering";
 import {
   furthestClipEndFromSource,
   getTimelineElementIdentity,
+  readPlaybackStartAttributes,
 } from "../player/lib/timelineElementHelpers";
+import { resolveTimelinePlaybackRate } from "../player/components/timelineGroupEditing";
 import {
   saveProjectFilesWithHistory,
   writeProjectFilesWithHistoryInQueue,
@@ -219,15 +221,19 @@ function resolveResizePlaybackStart(
   }
   const trimDelta = updates.start - element.start;
   if (trimDelta === 0) return null;
-  const raw =
-    readAttributeByTarget(original, target, "playback-start") ??
-    readAttributeByTarget(original, target, "media-start");
-  const current = raw != null ? parseFloat(raw) : undefined;
-  if (current == null || !Number.isFinite(current)) return null;
-  const attrName = playbackStartAttributeForElement(element).slice("data-".length);
+  const source = readPlaybackStartAttributes((name) =>
+    readAttributeByTarget(original, target, name),
+  );
+  if (source.playbackStart == null) return null;
+  const attrName = playbackStartAttributeForElement({ ...element, ...source }).slice(
+    "data-".length,
+  );
   return {
     attrName,
-    value: Math.max(0, current + trimDelta * Math.max(element.playbackRate ?? 1, 0.1)),
+    value: Math.max(
+      0,
+      source.playbackStart + trimDelta * resolveTimelinePlaybackRate(element.playbackRate),
+    ),
   };
 }
 

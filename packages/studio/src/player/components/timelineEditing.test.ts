@@ -880,6 +880,17 @@ describe("resolveTimelineResize", () => {
     expect(next.start).toBe(2);
   });
 
+  it("keeps the minimum duration when a head trim runs into an off-grid end", () => {
+    const clip = { start: 1, duration: 0.625, playbackStart: 0 };
+    const single = resolveTimelineResize(
+      { ...clip, originClientX: 0, pixelsPerSecond: 100, minStart: 0, maxEnd: 10 },
+      "start",
+      1000,
+    );
+    const group = resolveTimelineGroupResize([clip], "start", 10).members[0]!;
+    expect(Math.min(single.duration, group.duration)).toBeGreaterThanOrEqual(0.1);
+  });
+
   it("moves every group member by the same amount when one reaches its media start", () => {
     const members = [
       { start: 2, duration: 3, playbackStart: 1, playbackRate: 1.5 },
