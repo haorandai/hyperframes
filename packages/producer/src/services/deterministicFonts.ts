@@ -904,6 +904,8 @@ interface InternalFontFetchOptions {
   abortSignal?: AbortSignal;
   retryPolicy: FontFetchRetryPolicy;
   retryDeadlineMs: number;
+  /** Google stylesheet URL the page already wrote, keyed by normalized family name. */
+  authoredStylesheets: ReadonlyMap<string, string>;
 }
 
 /**
@@ -1169,6 +1171,54 @@ function fetchGoogleFontCss(
   return raceAgainstAbort(shared, options.abortSignal);
 }
 
+function linkRelIncludesStylesheet(tag: string): boolean {
+  const rel = /\brel\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(tag);
+  const value = rel?.[1] ?? rel?.[2];
+  if (!value) return false;
+  return value.split(/\s+/).some((token) => token.toLowerCase() === "stylesheet");
+}
+
+function stylesheetHref(tag: string): string | undefined {
+  if (!linkRelIncludesStylesheet(tag)) return undefined;
+  const href = /\bhref\s*=\s*(?:"([^"]+)"|'([^']+)')/i.exec(tag);
+  return href?.[1] ?? href?.[2];
+}
+
+function googleStylesheetFamilies(urlText: string): string[] {
+  let parsed: URL;
+  try {
+    parsed = new URL(urlText);
+  } catch {
+    return [];
+  }
+  if (parsed.hostname !== "fonts.googleapis.com") return [];
+  const names: string[] = [];
+  for (const raw of parsed.searchParams.getAll("family")) {
+    const name = raw.split(":")[0]?.trim();
+    if (name) names.push(name);
+  }
+  return names;
+}
+
+/** First Google stylesheet in the page that names each family. Later links do not replace it. */
+function authoredGoogleFontStylesheetByFamily(html: string): Map<string, string> {
+  const byFamily = new Map<string, string>();
+  for (const tag of html.matchAll(/<link\b[^>]*>/gi)) {
+    const urlText = stylesheetHref(tag[0]);
+    if (!urlText) continue;
+    for (const name of googleStylesheetFamilies(urlText)) {
+      const key = normalizeFamilyName(name);
+      if (!byFamily.has(key)) byFamily.set(key, urlText);
+    }
+  }
+  return byFamily;
+}
+
+function declaredFaceFamily(block: string): string | undefined {
+  const found = /font-family:\s*['"]([^'"]+)['"]/i.exec(block);
+  return found?.[1];
+}
+
 async function fetchGoogleFont(
   familyName: string,
   options: InternalFontFetchOptions,
@@ -1183,7 +1233,14 @@ async function fetchGoogleFont(
   const googleFamilyName = familyName.replace(/\+/g, " ");
   const encodedFamily = encodeURIComponent(googleFamilyName);
   const textParam = fontText ? `&text=${encodeURIComponent(fontText)}` : "";
-  const url = `https://fonts.googleapis.com/css2?family=${encodedFamily}:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700${textParam}`;
+  // The page's own Google stylesheet already names this family. Download that
+  // URL. Replacing it with the weight-only URL drops axes the link asked for,
+  // and the embedded face is written after the link, so the wider file wins.
+  // A failed download stays failed instead of fetching a different file.
+  const authoredStylesheet = options.authoredStylesheets.get(normalizeFamilyName(googleFamilyName));
+  const url =
+    authoredStylesheet ??
+    `https://fonts.googleapis.com/css2?family=${encodedFamily}:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700${textParam}`;
 
   let cssText: string;
   try {
@@ -1226,6 +1283,10 @@ async function fetchGoogleFont(
     const weight = match[2] || "400";
     const woff2Url = match[3] || "";
     const unicodeRange = match[4]?.trim() || undefined;
+    const declared = declaredFaceFamily(match[0]);
+    if (declared && normalizeFamilyName(declared) !== normalizeFamilyName(googleFamilyName)) {
+      continue;
+    }
 
     if (!woff2Url) continue;
 
@@ -1474,6 +1535,7 @@ export async function injectDeterministicFontFaces(
     abortSignal: options.abortSignal,
     retryPolicy,
     retryDeadlineMs: Date.now() + retryPolicy.maxElapsedMs,
+    authoredStylesheets: authoredGoogleFontStylesheetByFamily(html),
   };
 
   const existingFaces = extractExistingFontFaces(html);

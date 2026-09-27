@@ -19,10 +19,13 @@
  * so they are hermetic.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { _clearGoogleFontCssCacheForTests } from "./deterministicFonts.js";
+
+beforeEach(() => _clearGoogleFontCssCacheForTests());
 
 let cacheDir: string;
 let prevCacheEnv: string | undefined;
@@ -106,5 +109,132 @@ describe("Google Fonts multi-subset embedding", () => {
     const latinFace = faces.find((f) => f.includes(b64(LATIN_BYTES)));
     expect(latinFace).toBeDefined();
     expect(latinFace).toContain(LATIN_RANGE);
+  });
+});
+
+const AUTHORED_HREF =
+  "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Nunito+Sans:wght@400;600;700&display=swap";
+const FRAUNCES_FILE = "https://fonts.gstatic.com/s/fraunces/authored.woff2";
+const NUNITO_FILE = "https://fonts.gstatic.com/s/nunitosans/authored.woff2";
+const WIDE_FILE = "https://fonts.gstatic.com/s/fraunces/wide.woff2";
+const INTER_FILE = "https://fonts.gstatic.com/s/inter/v1/inter-supplement.woff2";
+
+const AUTHORED_CSS = `@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(${FRAUNCES_FILE}) format('woff2');
+  unicode-range: U+0000-00FF;
+}
+@font-face {
+  font-family: 'Nunito Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(${NUNITO_FILE}) format('woff2');
+  unicode-range: U+0000-00FF;
+}`;
+
+function authoredPage(head: string): string {
+  return `<!doctype html><html><head>${head}</head><body><h1>Seconds</h1></body></html>`;
+}
+
+function authoredFetch(cssStatus: number): { fetchImpl: typeof fetch; urls: string[] } {
+  const urls: string[] = [];
+  const fetchImpl = (async (input: unknown) => {
+    const url = String(input);
+    urls.push(url);
+    if (url === AUTHORED_HREF)
+      return new Response(cssStatus === 200 ? AUTHORED_CSS : "", { status: cssStatus });
+    if (url.includes("family=Fraunces:ital,wght@")) {
+      return new Response(
+        `@font-face { font-family: 'Fraunces'; font-style: normal; font-weight: 500; src: url(${WIDE_FILE}) format('woff2'); unicode-range: U+0000-00FF; }`,
+        { status: 200 },
+      );
+    }
+    if (url.includes("family=Inter:")) {
+      return new Response(
+        `@font-face { font-family: 'Inter'; font-style: normal; font-weight: 300; src: url(${INTER_FILE}) format('woff2'); }`,
+        { status: 200 },
+      );
+    }
+    if (url === FRAUNCES_FILE) return new Response("FRAUNCES_LINKED", { status: 200 });
+    if (url === NUNITO_FILE) return new Response("NUNITO_LINKED", { status: 200 });
+    if (url === WIDE_FILE) return new Response("FRAUNCES_WIDE", { status: 200 });
+    if (url === INTER_FILE) return new Response("INTER_BYTES", { status: 200 });
+    return new Response("", { status: 404 });
+  }) as unknown as typeof fetch;
+  return { fetchImpl, urls };
+}
+
+describe("authored Google font stylesheet", () => {
+  it("embeds the linked file and leaves it after the link", async () => {
+    const { injectDeterministicFontFaces } = await import("./deterministicFonts.js");
+    const { fetchImpl, urls } = authoredFetch(200);
+    const result = await injectDeterministicFontFaces(
+      authoredPage(
+        `<link rel="stylesheet" href="${AUTHORED_HREF}">` +
+          `<style>h1 { font-family: "Fraunces", serif; } p { font-family: "Nunito Sans", sans-serif; }</style>`,
+      ),
+      { fetchImpl, allowSystemFontCapture: false },
+    );
+
+    expect(urls.filter((url) => url.startsWith("https://fonts.googleapis.com/"))).toEqual([
+      AUTHORED_HREF,
+    ]);
+    expect(result).toContain(b64("FRAUNCES_LINKED"));
+    expect(result).toContain(b64("NUNITO_LINKED"));
+    expect(result).not.toContain(b64("FRAUNCES_WIDE"));
+    const frauncesFace = result
+      .split("@font-face")
+      .find((block) => block.includes('font-family: "Fraunces"'));
+    expect(frauncesFace).toBeDefined();
+    expect(frauncesFace).not.toContain(b64("NUNITO_LINKED"));
+    expect(result.indexOf("data-hyperframes-deterministic-fonts")).toBeGreaterThan(
+      result.indexOf(AUTHORED_HREF),
+    );
+  });
+
+  it("does not replace a failed link with the weight-only file", async () => {
+    const { injectDeterministicFontFaces } = await import("./deterministicFonts.js");
+    const { fetchImpl, urls } = authoredFetch(400);
+    const result = await injectDeterministicFontFaces(
+      authoredPage(
+        `<link rel="stylesheet" href="${AUTHORED_HREF}"><style>h1 { font-family: "Fraunces", serif; }</style>`,
+      ),
+      { fetchImpl, allowSystemFontCapture: false },
+    );
+
+    expect(urls.some((url) => url.includes("ital,wght@"))).toBe(false);
+    expect(result).not.toContain(b64("FRAUNCES_WIDE"));
+    expect(result).not.toContain("data-hyperframes-deterministic-fonts");
+  });
+
+  it("still requests by family name when the page has no Google link", async () => {
+    const { injectDeterministicFontFaces } = await import("./deterministicFonts.js");
+    const { fetchImpl, urls } = authoredFetch(200);
+    const result = await injectDeterministicFontFaces(
+      authoredPage(`<style>h1 { font-family: "Fraunces", serif; }</style>`),
+      { fetchImpl, allowSystemFontCapture: false },
+    );
+
+    expect(urls.some((url) => url.includes("family=Fraunces:ital,wght@"))).toBe(true);
+    expect(result).toContain(b64("FRAUNCES_WIDE"));
+  });
+
+  it("still embeds Inter for Arial when the page links Arial", async () => {
+    const { injectDeterministicFontFaces } = await import("./deterministicFonts.js");
+    const { fetchImpl, urls } = authoredFetch(200);
+    await injectDeterministicFontFaces(
+      authoredPage(
+        `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Arial">` +
+          `<style>h1 { font-family: Arial, sans-serif; }</style>`,
+      ),
+      { fetchImpl, allowSystemFontCapture: false },
+    );
+
+    expect(urls.some((url) => url.includes("family=Arial"))).toBe(false);
+    expect(urls.some((url) => url.includes("family=Inter:"))).toBe(true);
   });
 });
