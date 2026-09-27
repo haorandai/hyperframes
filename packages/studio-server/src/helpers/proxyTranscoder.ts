@@ -471,7 +471,7 @@ let settledProxyCount = 0;
 /** Null while a copy for this project is being made; otherwise a mark that moves when any copy finishes. */
 export function proxyActivityMark(projectDir: string): string | null {
   if (!existsSync(projectDir)) return String(settledProxyCount);
-  const cacheDir = join(realpathSync(projectDir), CACHE_DIR_NAME) + sep;
+  const cacheDir = join(realpath(projectDir), CACHE_DIR_NAME) + sep;
   for (const cachePath of inFlight.keys()) if (cachePath.startsWith(cacheDir)) return null;
   return String(settledProxyCount);
 }
