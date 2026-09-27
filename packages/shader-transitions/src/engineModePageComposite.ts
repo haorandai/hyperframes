@@ -291,8 +291,6 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
     // box fixes the collapse without ever overriding an author's own sizing.
     fromRect = fromEl.getBoundingClientRect();
     toRect = toEl.getBoundingClientRect();
-    const fromPin = clonePinStyleFor(fromRect);
-    const toPin = clonePinStyleFor(toRect);
 
     while (fromStaging.firstChild) fromStaging.removeChild(fromStaging.firstChild);
     while (toStaging.firstChild) toStaging.removeChild(toStaging.firstChild);
@@ -306,10 +304,11 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
     // paint record" and the shader degrades to a hard cut. The shader blends from
     // full-opacity textures via u_progress, so force the clones visible. Cf.
     // forceSceneVisibleInClone (html2canvas path).
-    for (const [clone, pin, live] of [
-      [fromClone, fromPin, fromEl],
-      [toClone, toPin, toEl],
+    for (const [clone, rect, live] of [
+      [fromClone, fromRect, fromEl],
+      [toClone, toRect, toEl],
     ] as const) {
+      const pin = clonePinStyleFor(rect);
       const liveStyle = getComputedStyle(live);
       for (const property of CLONE_INHERITED_TEXT_PROPERTIES) {
         clone.style.setProperty(property, liveStyle.getPropertyValue(property));
@@ -366,27 +365,22 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
       return false;
     }
 
+    const staged = [
+      [fromCtx, fromChild, fromRect],
+      [toCtx, toChild, toRect],
+    ] as const;
     // The staging canvases sit behind the page, so a bitmap left on them shows through any
     // transparent area of the composition after the transition; clear once uploaded or failed.
     const clearStaging = (): void => {
-      fromCtx.clearRect(0, 0, width, height);
-      toCtx.clearRect(0, 0, width, height);
+      for (const [ctx] of staged) ctx.clearRect(0, 0, width, height);
     };
     try {
-      fromCtx.fillStyle = options.bgColor;
-      fromCtx.fillRect(0, 0, width, height);
-      // Each clone draws into its own live box, so a scene smaller than the frame keeps its layout.
-      fromCtx.drawElementImage(
-        fromChild,
-        fromRect.left,
-        fromRect.top,
-        fromRect.width,
-        fromRect.height,
-      );
-
-      toCtx.fillStyle = options.bgColor;
-      toCtx.fillRect(0, 0, width, height);
-      toCtx.drawElementImage(toChild, toRect.left, toRect.top, toRect.width, toRect.height);
+      for (const [ctx, child, rect] of staged) {
+        ctx.fillStyle = options.bgColor;
+        ctx.fillRect(0, 0, width, height);
+        // Each clone draws into its own live box, so a scene smaller than the frame keeps its layout.
+        ctx.drawElementImage(child, rect.left, rect.top, rect.width, rect.height);
+      }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn("[HyperShader] page-side compositor: drawElementImage failed:", err);
