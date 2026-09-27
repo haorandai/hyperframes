@@ -3,7 +3,7 @@
   "name": "torn-paper-rip",
   "type": "hyperframes:component",
   "title": "Torn Paper Rip",
-  "description": "A jagged, fibrous paper tear travels across the frame, taking one scene with it and leaving the next standing. The exposed cross-section rides just behind the cut edge, on a token paper tone.",
+  "description": "A fibrous paper tear runs across the frame: the torn sheet shows its white paper core along the edge and lifts away on a soft shadow, leaving the next scene standing.",
   "tags": ["torn paper", "paper rip", "paper tear", "transition", "texture", "motion-primitive"],
   "files": [
     {
