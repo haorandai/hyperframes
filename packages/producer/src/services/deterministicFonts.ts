@@ -13,6 +13,7 @@ import { parseHTML } from "linkedom";
 import postcss, { type AtRule, type Declaration, type Rule } from "postcss";
 import { EMBEDDED_FONT_DATA } from "./fontData.generated.js";
 import { fontToDataUri } from "./fontCompression.js";
+import { authoredGoogleFontStylesheets, withPageText } from "./authoredGoogleFonts.js";
 
 type FontFaceSpec = {
   weight: string;
@@ -906,7 +907,7 @@ interface InternalFontFetchOptions {
   retryPolicy: FontFetchRetryPolicy;
   retryDeadlineMs: number;
   /** Google stylesheet URL the page already wrote, keyed by normalized family name. */
-  authoredStylesheets: ReadonlyMap<string, string>;
+  authoredStylesheets: ReadonlyMap<string, readonly string[]>;
 }
 
 /**
@@ -1172,99 +1173,6 @@ function fetchGoogleFontCss(
   return raceAgainstAbort(shared, options.abortSignal);
 }
 
-function linkRelIncludesStylesheet(tag: string): boolean {
-  const rel = /\brel\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(tag);
-  const value = rel?.[1] ?? rel?.[2];
-  if (!value) return false;
-  return value.split(/\s+/).some((token) => token.toLowerCase() === "stylesheet");
-}
-
-function stylesheetHref(tag: string): string | undefined {
-  if (!linkRelIncludesStylesheet(tag)) return undefined;
-  const href = /\bhref\s*=\s*(?:"([^"]+)"|'([^']+)')/i.exec(tag);
-  return href?.[1] ?? href?.[2];
-}
-
-function googleStylesheetFamilies(urlText: string): string[] {
-  let parsed: URL;
-  try {
-    parsed = new URL(urlText);
-  } catch {
-    return [];
-  }
-  if (parsed.hostname !== "fonts.googleapis.com") return [];
-  const names: string[] = [];
-  for (const raw of parsed.searchParams.getAll("family")) {
-    const name = raw.split(":")[0]?.trim();
-    if (name) names.push(name);
-  }
-  return names;
-}
-
-function cssImportUrls(css: string): string[] {
-  const urls: string[] = [];
-  const pattern = /@import\s+(?:url\(\s*['"]?([^'")\s]+)['"]?\s*\)|['"]([^'"]+)['"])/gi;
-  for (const match of css.matchAll(pattern)) {
-    const url = match[1] ?? match[2];
-    if (url) urls.push(url);
-  }
-  return urls;
-}
-
-function axisRangeScore(urlText: string, familyName: string): number {
-  let parsed: URL;
-  try {
-    parsed = new URL(urlText);
-  } catch {
-    return 0;
-  }
-  const wanted = normalizeFamilyName(familyName);
-  let score = 0;
-  for (const raw of parsed.searchParams.getAll("family")) {
-    const name = raw.split(":")[0]?.trim() ?? "";
-    if (normalizeFamilyName(name) !== wanted) continue;
-    score = Math.max(score, raw.match(/\.\./g)?.length ?? 0);
-  }
-  return score;
-}
-
-function rememberGoogleStylesheet(byFamily: Map<string, string>, urlText: string): void {
-  for (const name of googleStylesheetFamilies(urlText)) {
-    const key = normalizeFamilyName(name);
-    const existing = byFamily.get(key);
-    if (existing && axisRangeScore(urlText, name) <= axisRangeScore(existing, name)) continue;
-    byFamily.set(key, urlText);
-  }
-}
-
-/**
- * Google stylesheet for each family, in document order, including `@import`.
- * A later URL replaces an earlier one only when it names more axis ranges,
- * so `wght@400` does not hide a following `400..900`.
- */
-function authoredGoogleFontStylesheetByFamily(html: string): Map<string, string> {
-  const byFamily = new Map<string, string>();
-  const markup = /<link\b[^>]*>|<style\b[^>]*>([\s\S]*?)<\/style>/gi;
-  for (const match of html.matchAll(markup)) {
-    const tag = match[0];
-    if (/^<link\b/i.test(tag)) {
-      const urlText = stylesheetHref(tag);
-      if (urlText) rememberGoogleStylesheet(byFamily, urlText);
-      continue;
-    }
-    for (const urlText of cssImportUrls(match[1] ?? "")) {
-      rememberGoogleStylesheet(byFamily, urlText);
-    }
-  }
-  return byFamily;
-}
-
-function withPageText(url: string, fontText: string | undefined): string {
-  if (!fontText || /[?&]text=/.test(url)) return url;
-  const joiner = url.includes("?") ? "&" : "?";
-  return `${url}${joiner}text=${encodeURIComponent(fontText)}`;
-}
-
 function pageNamedThisFile(familyName: string, options: InternalFontFetchOptions): boolean {
   return options.authoredStylesheets.has(normalizeFamilyName(familyName.replace(/\+/g, " ")));
 }
@@ -1279,7 +1187,6 @@ async function fetchGoogleFont(
   options: InternalFontFetchOptions,
   fontText?: string,
 ): Promise<GoogleFontFace[]> {
-  const slug = fontSlug(familyName);
   // Agents sometimes copy the `family=` value from a Google Fonts URL into
   // CSS, where `+` remains a literal character instead of being decoded as a
   // space. Resolve that URL-style spelling through the canonical Google family
@@ -1297,11 +1204,23 @@ async function fetchGoogleFont(
     : options.authoredStylesheets.get(normalizedFamily);
   // `text=` asks Google for only the characters on the page. A CJK family
   // without it is a hundred files, and the compile's font budget is 20s.
-  const url = authoredStylesheet
-    ? withPageText(authoredStylesheet, fontText)
-    : `https://fonts.googleapis.com/css2?family=${encodedFamily}:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700${textParam}`;
+  const urls = authoredStylesheet
+    ? authoredStylesheet.map((url) => withPageText(url, fontText))
+    : [
+        `https://fonts.googleapis.com/css2?family=${encodedFamily}:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700${textParam}`,
+      ];
+  const faces: GoogleFontFace[] = [];
+  for (const url of urls) {
+    faces.push(...(await fetchGoogleFontStylesheet(googleFamilyName, url, options)));
+  }
+  return faces;
+}
 
-  let cssText: string;
+async function readGoogleFontStylesheet(
+  familyName: string,
+  url: string,
+  options: InternalFontFetchOptions,
+): Promise<string | null> {
   try {
     const cssResult = await fetchGoogleFontCss(url, familyName, options);
     if (!cssResult.ok) {
@@ -1313,9 +1232,9 @@ async function fetchGoogleFont(
       // transient upstream failures) could return faces on retry, which
       // would break the byte-identical-retry contract distributed
       // renders rely on — those still fail closed when requested.
-      return [];
+      return null;
     }
-    cssText = cssResult.body;
+    return cssResult.body;
   } catch (err) {
     // Rethrow typed error untouched. Network / DNS / fetch-throws are
     // non-deterministic infrastructure failures — wrapped when failClosed
@@ -1325,8 +1244,36 @@ async function fetchGoogleFont(
     if (options.failClosedFontFetch) {
       throw fontFetchError(familyName, url, "Google Fonts CSS", { error: err });
     }
-    return [];
+    return null;
   }
+}
+
+type GoogleFontSource = Omit<GoogleFontFace, "dataUri"> & { url: string };
+
+function parseGoogleFontSource(
+  match: RegExpMatchArray,
+  familyName: string,
+): GoogleFontSource | null {
+  const declared = declaredFaceFamily(match[0]);
+  if (declared && normalizeFamilyName(declared) !== normalizeFamilyName(familyName)) return null;
+  const url = match[3];
+  if (!url) return null;
+  return {
+    style: match[1] || "normal",
+    weight: (match[2] || "400").replace(/\s+/g, " "),
+    url,
+    unicodeRange: match[4]?.trim() || undefined,
+  };
+}
+
+async function fetchGoogleFontStylesheet(
+  familyName: string,
+  url: string,
+  options: InternalFontFetchOptions,
+): Promise<GoogleFontFace[]> {
+  const slug = fontSlug(familyName);
+  const cssText = await readGoogleFontStylesheet(familyName, url, options);
+  if (!cssText) return [];
 
   // Parse @font-face blocks from the CSS response. The optional trailing
   // capture grabs each face's `unicode-range` (Google emits it after `src`)
@@ -1340,16 +1287,9 @@ async function fetchGoogleFont(
   const faces: GoogleFontFace[] = [];
 
   for (const match of cssText.matchAll(faceRegex)) {
-    const style = match[1] || "normal";
-    const weight = (match[2] || "400").replace(/\s+/g, " ");
-    const woff2Url = match[3] || "";
-    const unicodeRange = match[4]?.trim() || undefined;
-    const declared = declaredFaceFamily(match[0]);
-    if (declared && normalizeFamilyName(declared) !== normalizeFamilyName(googleFamilyName)) {
-      continue;
-    }
-
-    if (!woff2Url) continue;
+    const source = parseGoogleFontSource(match, familyName);
+    if (!source) continue;
+    const { weight, style, unicodeRange, url: woff2Url } = source;
 
     const cachePath = cachedWoff2Path(slug, weight, style, subsetToken(woff2Url));
     const dataUri = await ensureWoff2DataUri(
@@ -1596,7 +1536,7 @@ export async function injectDeterministicFontFaces(
     abortSignal: options.abortSignal,
     retryPolicy,
     retryDeadlineMs: Date.now() + retryPolicy.maxElapsedMs,
-    authoredStylesheets: authoredGoogleFontStylesheetByFamily(html),
+    authoredStylesheets: authoredGoogleFontStylesheets(html),
   };
 
   const existingFaces = extractExistingFontFaces(html);

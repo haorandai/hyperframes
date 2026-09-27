@@ -310,7 +310,7 @@ describe("authored Google font stylesheet", () => {
     expect(result).not.toContain(b64("FRAUNCES_WIDE"));
   });
 
-  it("uses a later link when it names a weight range and the first does not", async () => {
+  it("preserves a later weight-range link alongside the first static link", async () => {
     const narrow = "https://fonts.googleapis.com/css2?family=Bodoni+Moda:wght@400&display=swap";
     const wide =
       "https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900&display=swap";
@@ -340,13 +340,14 @@ describe("authored Google font stylesheet", () => {
     );
 
     const cssUrls = urls.filter((url) => url.startsWith("https://fonts.googleapis.com/"));
-    expect(cssUrls).toHaveLength(1);
-    expect(cssUrls[0]?.startsWith(`${wide}&text=`)).toBe(true);
+    expect(cssUrls).toHaveLength(2);
+    expect(cssUrls[0]?.startsWith(`${narrow}&text=`)).toBe(true);
+    expect(cssUrls[1]?.startsWith(`${wide}&text=`)).toBe(true);
     expect(result).toContain("font-weight: 400 900;");
     expect(result).toContain(b64("BODONI_RANGE"));
   });
 
-  it("keeps the first link when a later one names fewer ranges", async () => {
+  it("preserves the first weight-range link alongside a later static link", async () => {
     const wide =
       "https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900&display=swap";
     const narrow = "https://fonts.googleapis.com/css2?family=Bodoni+Moda:wght@400&display=swap";
@@ -375,8 +376,9 @@ describe("authored Google font stylesheet", () => {
     );
 
     const cssUrls = urls.filter((url) => url.startsWith("https://fonts.googleapis.com/"));
-    expect(cssUrls).toHaveLength(1);
+    expect(cssUrls).toHaveLength(2);
     expect(cssUrls[0]?.startsWith(`${wide}&text=`)).toBe(true);
+    expect(cssUrls[1]?.startsWith(`${narrow}&text=`)).toBe(true);
   });
 
   it("leaves a link's own text list unchanged", async () => {
