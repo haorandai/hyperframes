@@ -290,8 +290,8 @@
           gsap.set(cursor, { xPercent: -20.83, yPercent: -12.5 });
           gsap.set(target, { xPercent: -50, yPercent: -50, scale: 1 });
 
-          // RETIME RANGE: IN/OUT are fixed durations. They only shrink, proportionally,
-          // if the composition duration is too short to hold IN + OUT at all.
+          // entry and exit keep fixed durations; both shrink proportionally only
+          // when the composition is too short to fit them.
           var IN_BASE = 1.02; // 0.5s glide + 0.2s aim + 0.1s press + 0.22s release
           var OUT_BASE = 0.4;
           var totalBase = IN_BASE + OUT_BASE;
@@ -309,7 +309,7 @@
           var glideDur = 0.5 * shrinkFactor;
           var clickInDur = 0.1 * shrinkFactor;
           var clickOutDur = 0.22 * shrinkFactor;
-          // SYNC POINT: click moment, a fixed offset into IN, never inside the elastic HOLD.
+          // the click lands at a fixed offset into the entry, never in the stretchable hold.
           var CLICK_AT = (0.5 + 0.2) * shrinkFactor;
           var TIP_ORIGIN = "20.83% 12.5%";
 

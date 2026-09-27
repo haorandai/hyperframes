@@ -99,8 +99,8 @@
         }
 
         .hf-touch-indicator__actor {
-          /* EDIT ZONE: 18cqw of the host box, meant to be the phone screen;
-             46px floor, 111px cap for wide hosts. */
+          /* sized to 18cqw of the host box, meant to be the phone screen,
+             with a 46px floor and a 111px cap for wide hosts. */
           --hf-gesture-size: clamp(46px, 18cqw, 111px);
           position: absolute;
           left: 0;
@@ -226,7 +226,7 @@
               );
               holdEnd = touchDown + swipeDuration;
             } else {
-              // RETIME RANGE: 0.08s - 0.20s, a tap's contact time; longer reads as a long-press.
+              // a tap touches for 0.08s to 0.2s; any longer reads as a long-press.
               holdEnd = touchDown + q(clamp(0.12 * elasticity, 0.08, 0.2));
             }
 

@@ -323,7 +323,7 @@
     <script>
       window.__timelines = window.__timelines || {};
       var tl = gsap.timeline({ paused: true });
-      // 0.8s is the component's click release (its SYNC POINT plus the press).
+      // 0.8s is when the component's click releases: the click moment plus the press.
       tl.to("#comment-mark", { backgroundColor: "rgba(255, 204, 0, 0.35)", duration: 0.2 }, 0.8);
       tl.fromTo(
         "#comment",
