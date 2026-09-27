@@ -17,6 +17,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ensureHfIds } from "@hyperframes/parsers/hf-ids";
+import { STUDIO_PREVIEW_MARK_ATTR } from "@hyperframes/core/compiler";
 import { PREVIEW_BUNDLE_OPTIONS, registerPreviewRoutes } from "./preview";
 import { registerFileRoutes } from "./files";
 import { createPreviewDocumentStore } from "../helpers/previewDocumentStore";
@@ -104,6 +105,16 @@ describe("registerPreviewRoutes", () => {
     );
     const authored = await (await app.request("http://localhost/projects/demo/preview")).text();
     expect(authored).not.toContain('<base href="/api/projects/demo/preview/">');
+  });
+
+  it("serves the mark the runtime keys preview-only work on, ahead of the runtime script", async () => {
+    const projectDir = createProjectDir();
+    const app = new Hono();
+    registerPreviewRoutes(app, createAdapter(projectDir));
+    const html = await (await app.request("http://localhost/projects/demo/preview")).text();
+    const mark = html.indexOf(`<script ${STUDIO_PREVIEW_MARK_ATTR}`);
+    expect(mark).toBeGreaterThan(-1);
+    expect(mark).toBeLessThan(html.indexOf("/api/runtime.js"));
   });
 
   it("injects Studio GSAP motion manifest runtime into project preview", async () => {

@@ -58,6 +58,7 @@ export {
 } from "./htmlDocument";
 
 export { addScenePartsManifest } from "./scenePartsManifest";
+export { STUDIO_PREVIEW_MARK_ATTR } from "../studioPreviewMark";
 
 // Script ordering shared by the bundler and the producer coalescers
 export { inlineScriptRuns, type InlineScriptRun } from "./scriptRuns";
