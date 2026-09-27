@@ -877,6 +877,8 @@ export async function extractVideoFramesRange(
   const isHdr = isHdrColorSpaceUtil(metadata.colorSpace);
   const isMacOS = process.platform === "darwin";
 
+  const sampleCfrAtOutputFps = !options.finalFrameOnly && !metadata.isVFR;
+
   const args: string[] = [];
   if (isHdr && isMacOS) {
     args.push("-hwaccel", "videotoolbox");
@@ -901,7 +903,7 @@ export async function extractVideoFramesRange(
     args.push("-i", videoPath, "-ss", String(startTime), "-frames:v", "1");
   } else {
     // CFR sampling keeps the frame on screen at startTime, which an accurate seek drops.
-    if (!metadata.isVFR) args.push("-noaccurate_seek");
+    if (sampleCfrAtOutputFps) args.push("-noaccurate_seek");
     args.push("-ss", String(startTime), "-i", videoPath, "-t", String(duration));
   }
 
@@ -910,7 +912,7 @@ export async function extractVideoFramesRange(
     // VideoToolbox tone-maps during decode; force output to bt709 SDR format
     vfFilters.push("format=nv12");
   }
-  if (!options.finalFrameOnly && !metadata.isVFR) {
+  if (sampleCfrAtOutputFps) {
     // Each slot takes the last frame at or before its time, as a seeked <video> shows it.
     vfFilters.push(`fps=${ffmpegFps}:start_time=0:round=up`);
   }
