@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { reapplyPositionEditsAfterSeek } from "./manualEditsSeekReapply";
-import { STUDIO_PATH_OFFSET_ATTR } from "./manualEditsTypes";
+import {
+  STUDIO_PATH_OFFSET_ATTR,
+  STUDIO_ROTATION_ATTR,
+  STUDIO_ROTATION_PROP,
+} from "./manualEditsTypes";
 import { STUDIO_MOTION_TIMELINE_ID } from "./studioMotionTypes";
 
 describe("reapplyPositionEditsAfterSeek", () => {
@@ -17,6 +21,45 @@ describe("reapplyPositionEditsAfterSeek", () => {
     reapplyPositionEditsAfterSeek(document);
 
     expect(queryAll).not.toHaveBeenCalled();
+  });
+
+  it("looks nothing up on later seeks of a film Studio never edited", () => {
+    document.body.innerHTML = '<div id="a"></div><div id="b"></div>';
+    const query = vi.spyOn(document, "querySelector");
+    reapplyPositionEditsAfterSeek(document);
+    // A comma selector list walks the whole DOM in Chrome; lone attribute selectors do not.
+    for (const [selector] of query.mock.calls) expect(selector).not.toContain(",");
+    query.mockClear();
+    const queryAll = vi.spyOn(document, "querySelectorAll");
+
+    reapplyPositionEditsAfterSeek(document);
+
+    expect(query).not.toHaveBeenCalled();
+    expect(queryAll).not.toHaveBeenCalled();
+  });
+
+  it("looks up no more on a film with an edit than the reapply itself does", () => {
+    document.body.innerHTML = `<div id="a" ${STUDIO_ROTATION_ATTR}="true" style="${STUDIO_ROTATION_PROP}: 8deg"></div>`;
+    reapplyPositionEditsAfterSeek(document);
+    const query = vi.spyOn(document, "querySelector");
+    const queryAll = vi.spyOn(document, "querySelectorAll");
+
+    reapplyPositionEditsAfterSeek(document);
+
+    // Three edit kinds, each with a legacy mark, plus motion: seven, as before the skip.
+    expect(query.mock.calls.length + queryAll.mock.calls.length).toBeLessThanOrEqual(7);
+  });
+
+  it("reapplies an edit made after the last seek, in the same task", () => {
+    document.body.innerHTML = '<div id="a"></div>';
+    reapplyPositionEditsAfterSeek(document);
+    const el = document.getElementById("a") as HTMLElement;
+    el.setAttribute(STUDIO_ROTATION_ATTR, "true");
+    el.style.setProperty(STUDIO_ROTATION_PROP, "8deg");
+
+    reapplyPositionEditsAfterSeek(document);
+
+    expect(el.style.getPropertyValue("rotate")).toContain(STUDIO_ROTATION_PROP);
   });
 
   it("still clears a motion timeline whose marks an undo removed", () => {
