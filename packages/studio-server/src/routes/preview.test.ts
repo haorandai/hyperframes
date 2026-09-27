@@ -9,6 +9,7 @@ import {
   openSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -21,7 +22,6 @@ import { join, parse } from "node:path";
 import { ensureHfIds } from "@hyperframes/parsers/hf-ids";
 import { PREVIEW_BUNDLE_OPTIONS, registerPreviewRoutes } from "./preview";
 import { registerFileRoutes } from "./files";
-import { ProjectRootMissingError } from "../helpers/safePath";
 import { createPreviewDocumentStore } from "../helpers/previewDocumentStore";
 import type { StudioApiAdapter } from "../types";
 import {
@@ -1721,7 +1721,7 @@ describe("hf-proxy codec probe", () => {
     return { proxy, probeMediaMetadata };
   }
 
-  it("answers that the project folder is gone when it is renamed while a proxy waits", async () => {
+  it("answers that the project folder is gone when it is renamed while a proxy is requested", async () => {
     const projectDir = createProjectDir();
     writeFileSync(join(projectDir, "clip.mp4"), "original-hevc-bytes");
     vi.resetModules();
@@ -1729,17 +1729,9 @@ describe("hf-proxy codec probe", () => {
       ...(await vi.importActual<typeof import("../helpers/mediaMetadata.js")>(
         "../helpers/mediaMetadata.js",
       )),
-      probeMediaMetadata: async () => ({
-        kind: "video" as const,
-        color: { codecName: "hevc", pixelFormat: "yuv420p" },
-      }),
-    }));
-    vi.doMock("../helpers/proxyTranscoder.js", async () => ({
-      ...(await vi.importActual<typeof import("../helpers/proxyTranscoder.js")>(
-        "../helpers/proxyTranscoder.js",
-      )),
-      resolveProxy: async () => {
-        throw new ProjectRootMissingError(projectDir);
+      probeMediaMetadata: async () => {
+        renameSync(projectDir, `${projectDir}-renamed`);
+        return { kind: "video" as const, color: { codecName: "hevc", pixelFormat: "yuv420p" } };
       },
     }));
     const { createStudioApi: create } = await import("../createStudioApi.js");

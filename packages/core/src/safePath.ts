@@ -110,6 +110,16 @@ export class ProjectRootMissingError extends Error {
 export const isProjectRootMissing = (error: unknown): boolean =>
   error instanceof Error && error.name === "ProjectRootMissingError";
 
+/** The project folder's real path; ProjectRootMissingError when it is gone. */
+export function realProjectRoot(root: string): string {
+  try {
+    return realpath(root);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new ProjectRootMissingError(root);
+    throw error;
+  }
+}
+
 /** Creates `dir` below `root` one folder at a time, so a root moved away fails instead of reappearing. */
 export function mkdirWithinProject(root: string, dir: string): void {
   const inside = relative(resolve(root), resolve(dir));

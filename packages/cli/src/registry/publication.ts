@@ -1,16 +1,8 @@
 import { lstatSync, chmodSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { mkdirWithinProject, ProjectRootMissingError, realpath } from "@hyperframes/core";
+import { mkdirWithinProject, realpath } from "@hyperframes/core";
 
-export function registryRoot(directory: string): string {
-  try {
-    return realpath(directory);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT")
-      throw new ProjectRootMissingError(directory);
-    throw error;
-  }
-}
+export { realProjectRoot as registryRoot } from "@hyperframes/core";
 
 export function registryTargetPath(root: string, target: string): string {
   const parts = target.split(/[\\/]/);

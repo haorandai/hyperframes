@@ -6,7 +6,7 @@ import { findFfBinary } from "@hyperframes/parsers/ff-binaries";
 import { probeMediaMetadata } from "./mediaMetadata.js";
 import { cleanupProxyCache } from "./proxyCache.js";
 import { PROXY_VARIANT_CONFIG, type ProxyVariant } from "./mediaCodecMap.js";
-import { mkdirWithinProject, realpath } from "./safePath.js";
+import { mkdirWithinProject, realpath, realProjectRoot } from "./safePath.js";
 
 /**
  * Transcodes browser-hostile local video sources (HEVC, ProRes, ...) into a
@@ -151,7 +151,7 @@ function canonicalizeProxySource(
     throw new ProxySourceOutsideProjectError();
   }
 
-  const canonicalProjectDir = realpath(projectDir);
+  const canonicalProjectDir = realProjectRoot(projectDir);
   const canonicalSourcePath = realpath(absoluteSourcePath);
   const canonicalRelativePath = relative(canonicalProjectDir, canonicalSourcePath);
   const sourceIsInsideCanonicalProject =

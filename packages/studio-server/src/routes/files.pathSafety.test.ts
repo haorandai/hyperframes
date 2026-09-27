@@ -500,4 +500,13 @@ describe("upload collision races", () => {
     expect(await response.json()).toMatchObject({ files: [] });
     expect(readFileSync(join(outside, "secret.txt"), "utf8")).toBe("outside secret");
   });
+
+  it("answers that the project folder is gone when it is renamed while a file is read", async () => {
+    const { app, project } = fixture();
+    raceDuringRead("upload.txt", () => renameSync(project, `${project}-renamed`));
+    const response = await upload(app);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ why: "project_dir_missing" });
+    expect(existsSync(project)).toBe(false);
+  });
 });

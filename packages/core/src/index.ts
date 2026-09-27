@@ -281,6 +281,7 @@ export {
   mkdirWithinProject,
   ProjectRootMissingError,
   realpath,
+  realProjectRoot,
   resolveWithinProject,
 } from "./safePath";
 export type {

@@ -11,6 +11,7 @@ export {
   mkdirWithinProject,
   ProjectRootMissingError,
   realpath,
+  realProjectRoot,
   resolveWithinProject,
 } from "@hyperframes/core";
 
