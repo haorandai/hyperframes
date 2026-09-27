@@ -14,7 +14,12 @@ export const examples: Example[] = [
 import { existsSync, readFileSync } from "node:fs";
 import { parseHTML } from "linkedom";
 import { resolve, relative } from "node:path";
-import { isProjectRootMissing, ITEM_TYPE_DIRS, realpath, type RegistryItem } from "@hyperframes/core";
+import {
+  isProjectRootMissing,
+  ITEM_TYPE_DIRS,
+  realpath,
+  type RegistryItem,
+} from "@hyperframes/core";
 import { c } from "../ui/colors.js";
 import {
   DEFAULT_REGISTRY_URL,

@@ -1,11 +1,4 @@
-import {
-  lstatSync,
-  chmodSync,
-  mkdtempSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { lstatSync, chmodSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { mkdirWithinProject, ProjectRootMissingError, realpath } from "@hyperframes/core";
 
