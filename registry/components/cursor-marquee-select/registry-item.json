@@ -16,11 +16,11 @@
   "family": "pointers",
   "profile": "interaction",
   "syncPoints": [
-    { "id": "press", "phase": "in", "offset": 0.9 },
-    { "id": "release", "phase": "in", "offset": 2.3 }
+    { "id": "press", "phase": "in", "offset": 0.62 },
+    { "id": "release", "phase": "in", "offset": 2.1 }
   ],
   "variables": [
-    { "id": "accent", "type": "color", "role": "style", "label": "Accent", "default": "#2f7bf6" },
+    { "id": "accent", "type": "color", "role": "style", "label": "Accent", "default": "#0a84ff" },
     {
       "id": "start_x",
       "type": "number",
