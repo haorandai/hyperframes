@@ -76,11 +76,8 @@ interface ResolvedTransition {
 export const PAGE_COMPOSITOR_CANVAS_ID = "__hf-page-side-compositor";
 export const PAGE_COMPOSITOR_BUILD_CANARY = "__hf_page_compositor_v1__";
 
-/**
- * Wraps a scene clone in childless copies of its ancestors below `<body>`, so inherited styles,
- * scoped selectors and ancestor effects (transform, opacity, filter, clip) apply as they do live.
- * Returns the outermost copy, the live element it copies, and every live/copy pair.
- */
+/** Wraps a scene clone in childless copies of its ancestors below `<body>`, so inherited styles,
+ *  scoped selectors and ancestor effects apply as they do live. */
 function stageWithAncestors(
   scene: HTMLElement,
   clone: HTMLElement,
@@ -105,10 +102,8 @@ function stageWithAncestors(
   return { root, liveRoot, pairs };
 }
 
-/**
- * Pauses each copied CSS animation at its live counterpart's time; on a fresh copy it would
- * restart. One with no live counterpart has finished live, so it is cancelled.
- */
+/** Pauses each copied CSS animation at its live counterpart's time instead of restarting it;
+ *  one with no live counterpart has finished live, so it is cancelled. */
 function holdAnimations(liveRoot: Element, copyRoot: Element, pairs: Array<[Element, Element]>) {
   const slot = new Map<Element, number>();
   pairs.forEach(([live, copy], n) => {
