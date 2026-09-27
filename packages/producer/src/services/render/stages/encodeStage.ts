@@ -28,7 +28,16 @@
  *     `success: false`.
  */
 
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import {
   encodeFramesChunkedConcat,
@@ -41,7 +50,7 @@ import {
   type EngineConfig,
   type EncodeResult,
 } from "@hyperframes/engine";
-import type { Fps } from "@hyperframes/core";
+import { clearGifFramesBeforeNext, type Fps } from "@hyperframes/core";
 import type { ProducerLogger } from "../../../logger.js";
 import { formatExportFrameName } from "../../../utils/paths.js";
 import type { ProgressCallback, RenderJob } from "../../renderOrchestrator.js";
@@ -198,6 +207,20 @@ async function encodeGifFromDir(
         error: formatFfmpegError(gifResult.exitCode, gifResult.stderr),
         failureReason: gifResult.failureReason,
       };
+    }
+    if (input.preserveAlpha) {
+      const gif = readFileSync(outputPath);
+      if (!clearGifFramesBeforeNext(gif)) {
+        return {
+          success: false,
+          outputPath,
+          durationMs: Date.now() - startTime,
+          framesEncoded: 0,
+          fileSize: 0,
+          error: "[FFmpeg] GIF output could not be parsed to clear its frames",
+        };
+      }
+      writeFileSync(outputPath, gif);
     }
 
     const fileSize = existsSync(outputPath) ? statSync(outputPath).size : 0;

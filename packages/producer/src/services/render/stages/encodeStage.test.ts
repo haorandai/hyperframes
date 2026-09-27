@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, mock } from "bun:test";
@@ -409,11 +409,18 @@ describe("runEncodeStage config plumbing", () => {
   it("encodes alpha GIFs from PNG frames with explicit transparency filters", async () => {
     const { runEncodeStage } = await import("./encodeStage.js");
     const paths = createFramesDir("png");
+    // One 1x1 frame whose graphic control block says "leave in place" (disposal 1).
+    const oneFrameGif = Buffer.from(
+      "47494638396101000100800000000000ffffff21f90405000000002c00000000010001000002024401003b",
+      "hex",
+    );
+    const outputPath = join(paths.root, "out.gif");
+    writeFileSync(outputPath, oneFrameGif);
 
     await runEncodeStage(
       makeInput({
         framesDir: paths.framesDir,
-        outputPath: join(paths.root, "out.gif"),
+        outputPath,
         videoOnlyPath: join(paths.root, "video-only.mp4"),
         isGif: true,
         needsAlpha: true,
@@ -430,6 +437,9 @@ describe("runEncodeStage config plumbing", () => {
     expect(runFfmpegMock.mock.calls[1]?.[0]).toContain(
       "fps=30 [x]; [x][1:v] paletteuse=dither=sierra2_4a:alpha_threshold=128",
     );
+    expect(runFfmpegMock.mock.calls[1]?.[0]).toContain("-gifflags");
+    const packed = readFileSync(outputPath)[oneFrameGif.indexOf(Buffer.from("21f904", "hex")) + 3]!;
+    expect((packed >> 2) & 0b111).toBe(2);
   });
 
   it("keeps opaque GIF encoding on JPEG frames without alpha-only filters", async () => {
@@ -446,6 +456,7 @@ describe("runEncodeStage config plumbing", () => {
       }),
     );
 
+    expect(runFfmpegMock.mock.calls[1]?.[0]).not.toContain("-gifflags");
     expect(runFfmpegMock.mock.calls[0]?.[0]).toContain(join(paths.framesDir, "frame_%06d.jpg"));
     expect(runFfmpegMock.mock.calls[0]?.[0]).not.toContain("reserve_transparent");
     expect(runFfmpegMock.mock.calls[1]?.[0]).not.toContain("alpha_threshold");

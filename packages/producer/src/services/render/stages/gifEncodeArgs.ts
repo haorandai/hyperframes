@@ -16,6 +16,7 @@ function fpsToFfmpegArg(fps: Fps): string {
 }
 
 const KEEP_FILTER_GRAPH_WHEN_FRAMES_DROP_ALPHA = ["-reinit_filter", "0"];
+const WRITE_EVERY_FRAME_WHOLE = ["-gifflags", "0"];
 
 function framesInput(input: GifEncodeArgsInput, fpsArg: string): string[] {
   return [
@@ -51,6 +52,7 @@ export function buildGifPaletteuseArgs(input: GifEncodeArgsInput): string[] {
     `fps=${fpsArg} [x]; [x][1:v] paletteuse=dither=sierra2_4a${transparency}`,
     "-loop",
     String(input.loop),
+    ...(input.preserveAlpha ? WRITE_EVERY_FRAME_WHOLE : []),
     input.outputPath,
   ];
 }

@@ -76,7 +76,10 @@ function parseApplicationExtension(
   return null;
 }
 
-export function parseAnimatedGifMetadata(bytes: Uint8Array): AnimatedGifMetadata | null {
+export function parseAnimatedGifMetadata(
+  bytes: Uint8Array,
+  onGraphicControl?: (packedFieldOffset: number) => void,
+): AnimatedGifMetadata | null {
   if (bytes.length < 13) return null;
   const signature = readAscii(bytes, 0, 6);
   if (signature !== "GIF87a" && signature !== "GIF89a") return null;
@@ -113,6 +116,7 @@ export function parseAnimatedGifMetadata(bytes: Uint8Array): AnimatedGifMetadata
         const delay = readU16LE(bytes, pos + 2);
         if (delay == null) return null;
         delaysCentiseconds.push(normalizeDelayCentiseconds(delay));
+        onGraphicControl?.(pos + 1);
         pos += 1 + blockSize;
         if (bytes[pos] !== 0) return null;
         pos += 1;
@@ -163,4 +167,26 @@ export function parseAnimatedGifMetadata(bytes: Uint8Array): AnimatedGifMetadata
     loopCount,
     animated: frameCount > 1,
   };
+}
+
+const DISPOSE_TO_BACKGROUND = 2 << 2;
+const DISPOSAL_BITS = 0b0001_1100;
+const HAS_TRANSPARENT_INDEX = 0b0000_0001;
+const TRANSPARENT_INDEX_AFTER_PACKED = 3;
+
+export function clearGifFramesBeforeNext(bytes: Uint8Array): boolean {
+  const packedOffsets: number[] = [];
+  if (parseAnimatedGifMetadata(bytes, (at) => packedOffsets.push(at)) === null) return false;
+  const withTransparency = packedOffsets.find(
+    (at) => ((bytes[at] ?? 0) & HAS_TRANSPARENT_INDEX) !== 0,
+  );
+  for (const at of packedOffsets) {
+    bytes[at] = ((bytes[at] ?? 0) & ~DISPOSAL_BITS) | DISPOSE_TO_BACKGROUND;
+    if (withTransparency !== undefined && ((bytes[at] ?? 0) & HAS_TRANSPARENT_INDEX) === 0) {
+      bytes[at] = (bytes[at] ?? 0) | HAS_TRANSPARENT_INDEX;
+      bytes[at + TRANSPARENT_INDEX_AFTER_PACKED] =
+        bytes[withTransparency + TRANSPARENT_INDEX_AFTER_PACKED] ?? 0;
+    }
+  }
+  return true;
 }

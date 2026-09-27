@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAnimatedGifMetadata } from "./gif";
+import { clearGifFramesBeforeNext, parseAnimatedGifMetadata } from "./gif";
 
 function u16(value: number): number[] {
   return [value & 0xff, (value >> 8) & 0xff];
@@ -88,5 +88,28 @@ describe("parseAnimatedGifMetadata", () => {
 
   it("returns null for non-GIF data", () => {
     expect(parseAnimatedGifMetadata(Uint8Array.from([0x89, 0x50, 0x4e, 0x47]))).toBeNull();
+  });
+});
+
+describe("clearGifFramesBeforeNext", () => {
+  it("clears every frame to the GIF's transparent index before the next one", () => {
+    const transparentFrame = frame(10);
+    transparentFrame[3] = 0b0000_0101; // leave in place, transparent index present
+    transparentFrame[6] = 7;
+    const bytes = gif([...frame(10), ...transparentFrame]);
+
+    expect(clearGifFramesBeforeNext(bytes)).toBe(true);
+
+    const controls = [...bytes.keys()].filter(
+      (i) => bytes[i] === 0x21 && bytes[i + 1] === 0xf9 && bytes[i + 2] === 0x04,
+    );
+    expect(controls.map((i) => [bytes[i + 3], bytes[i + 6]])).toEqual([
+      [0b0000_1001, 7],
+      [0b0000_1001, 7],
+    ]);
+  });
+
+  it("refuses bytes that are not a GIF", () => {
+    expect(clearGifFramesBeforeNext(Uint8Array.from(ascii("not a gif at all")))).toBe(false);
   });
 });
