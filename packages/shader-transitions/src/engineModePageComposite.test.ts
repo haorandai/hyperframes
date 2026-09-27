@@ -91,6 +91,20 @@ describe("clonePinStyleFor", () => {
   });
 });
 
+// A WebGL context whose every call succeeds.
+function fakeWebGl(): object {
+  return new Proxy(
+    {},
+    {
+      get: (_target, key) => {
+        if (key === "getShaderParameter" || key === "getProgramParameter") return () => true;
+        if (key === "getExtension") return () => ({ loseContext: () => undefined });
+        return () => ({});
+      },
+    },
+  );
+}
+
 describe("page-side compositor seek", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -108,16 +122,7 @@ describe("page-side compositor seek", () => {
   function installWithHiddenScenes(
     timing: Record<string, readonly [start: string, duration: string]>,
   ) {
-    const gl = new Proxy(
-      {},
-      {
-        get: (_target, key) => {
-          if (key === "getShaderParameter" || key === "getProgramParameter") return () => true;
-          if (key === "getExtension") return () => ({ loseContext: () => undefined });
-          return () => ({});
-        },
-      },
-    );
+    const gl = fakeWebGl();
     const canvas = () => ({
       style: {},
       width: 0,
@@ -177,6 +182,151 @@ describe("page-side compositor seek", () => {
     const { hf, scenes } = installWithHiddenScenes(film);
     hf.seek(8.8);
     expect(scenes.get("s5")?.style.visibility).toBe("hidden");
+  });
+});
+
+// The transparent inset case: 640x360 composition, each scene inset 90px 160px, Arial on #main.
+describe("page-side compositor scene copies", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const INSET = { left: 160, top: 90, width: 320, height: 180 };
+
+  class FakeStyle {
+    values = new Map<string, string>();
+    setProperty(name: string, value: string) {
+      this.values.set(name, value);
+    }
+  }
+
+  class FakeScene {
+    style = new FakeStyle() as FakeStyle & Record<string, string>;
+    constructor(readonly id: string) {}
+    getAttribute() {
+      return null;
+    }
+    getBoundingClientRect() {
+      return { ...INSET, right: INSET.left + INSET.width, bottom: INSET.top + INSET.height };
+    }
+    cloneNode() {
+      return new FakeScene(`${this.id}-clone`);
+    }
+    querySelectorAll() {
+      return [];
+    }
+  }
+
+  function installTransparentInsetFilm() {
+    const calls: Array<{ canvas: number; op: string; args: unknown[] }> = [];
+    const gl = fakeWebGl();
+    let canvasCount = 0;
+    const createCanvas = () => {
+      const index = canvasCount++;
+      const children: FakeScene[] = [];
+      const record =
+        (op: string) =>
+        (...args: unknown[]) => {
+          calls.push({ canvas: index, op, args });
+        };
+      const ctx = {
+        fillStyle: "",
+        fillRect: record("fillRect"),
+        clearRect: record("clearRect"),
+        drawElementImage: record("drawElementImage"),
+      };
+      return {
+        style: {},
+        width: 0,
+        height: 0,
+        layoutSubtree: true,
+        setAttribute: () => undefined,
+        remove: () => undefined,
+        get firstChild() {
+          return children[0] ?? null;
+        },
+        get firstElementChild() {
+          return children[0] ?? null;
+        },
+        appendChild: (child: FakeScene) => children.push(child),
+        removeChild: () => children.shift(),
+        querySelectorAll: () => [],
+        getContext: (type: string) => (type === "2d" ? ctx : gl),
+      };
+    };
+    const scenes = new Map([
+      ["scene-a", new FakeScene("scene-a")],
+      ["scene-b", new FakeScene("scene-b")],
+    ]);
+    let startPolling: (() => void) | undefined;
+    const hf = { seek: vi.fn() };
+    const win: Record<string, unknown> = {
+      __hf: hf,
+      setInterval: (poll: () => void) => {
+        startPolling = poll;
+        return 1;
+      },
+      clearInterval: () => undefined,
+    };
+    vi.stubGlobal("window", win);
+    vi.stubGlobal("HTMLElement", FakeScene);
+    vi.stubGlobal("document", {
+      createElement: createCanvas,
+      getElementById: (id: string) => scenes.get(id) ?? null,
+      body: { appendChild: () => undefined },
+    });
+    vi.stubGlobal("getComputedStyle", () => ({
+      getPropertyValue: (name: string) => (name === "font-family" ? "Arial, sans-serif" : ""),
+    }));
+    installPageSideCompositor({
+      scenes: ["scene-a", "scene-b"],
+      transitions: [{ time: 0.75, duration: 0.85, shader: "glitch" }],
+      bgColor: "transparent",
+      accentColors: { accent: [1, 1, 1], dark: [0, 0, 0], bright: [1, 1, 1] },
+      width: 640,
+      height: 360,
+      defaultDuration: 0.85,
+    });
+    startPolling?.();
+    const composite = async (time: number) => {
+      hf.seek(time);
+      const prepare = win.__hf_page_composite_prepare as () => Promise<boolean>;
+      const resolve = win.__hf_page_composite_resolve as () => boolean;
+      await prepare();
+      return resolve();
+    };
+    return { calls, composite };
+  }
+
+  it("draws each scene copy into its own live box, not the whole frame", async () => {
+    const { calls, composite } = installTransparentInsetFilm();
+    expect(await composite(1.2)).toBe(true);
+    const draws = calls.filter((c) => c.op === "drawElementImage");
+    expect(draws.map((c) => c.args.slice(1))).toEqual([
+      [160, 90, 320, 180],
+      [160, 90, 320, 180],
+    ]);
+  });
+
+  it("clears both staging bitmaps after the textures are uploaded", async () => {
+    const { calls, composite } = installTransparentInsetFilm();
+    await composite(1.2);
+    const staging = new Set(calls.filter((c) => c.op === "drawElementImage").map((c) => c.canvas));
+    expect(staging.size).toBe(2);
+    for (const canvas of staging) {
+      const ops = calls.filter((c) => c.canvas === canvas).map((c) => c.op);
+      expect(ops.at(-1)).toBe("clearRect");
+    }
+  });
+
+  it("carries the live scene's inherited font onto each copy", async () => {
+    const { calls, composite } = installTransparentInsetFilm();
+    await composite(1.2);
+    const [fromCopy, toCopy] = calls
+      .filter((c) => c.op === "drawElementImage")
+      .map((c) => c.args[0] as FakeScene);
+    expect(fromCopy?.style.values.get("font-family")).toBe("Arial, sans-serif");
+    expect(toCopy?.style.values.get("font-family")).toBe("Arial, sans-serif");
   });
 });
 

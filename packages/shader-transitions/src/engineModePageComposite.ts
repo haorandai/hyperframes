@@ -106,6 +106,31 @@ export function clonePinStyleFor(rect: {
   };
 }
 
+/**
+ * Inherited text properties a scene clone loses when it moves under the staging canvas;
+ * copying the live scene's computed values keeps the composition's fonts in the textures.
+ */
+const CLONE_INHERITED_TEXT_PROPERTIES = [
+  "font-family",
+  "font-size",
+  "font-style",
+  "font-weight",
+  "font-stretch",
+  "font-variant",
+  "font-feature-settings",
+  "font-variation-settings",
+  "line-height",
+  "letter-spacing",
+  "word-spacing",
+  "color",
+  "text-align",
+  "text-transform",
+  "text-shadow",
+  "white-space",
+  "direction",
+  "writing-mode",
+] as const;
+
 export function isPageSideCompositingSupported(): boolean {
   if (typeof window === "undefined" || typeof document === "undefined") return false;
   if (!isHtmlInCanvasCaptureSupported()) return false;
@@ -229,6 +254,8 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
 
   let currentActive: ResolvedTransition | null = null;
   let currentProgress = 0;
+  let fromRect: DOMRect | null = null;
+  let toRect: DOMRect | null = null;
 
   type PendingWindow = Window & {
     __hf_page_composite_pending?: boolean;
@@ -262,8 +289,10 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
     // resolves inset:0 (and any authored explicit width/height) correctly
     // against the real ancestor chain, so pinning the clone to THIS measured
     // box fixes the collapse without ever overriding an author's own sizing.
-    const fromPin = clonePinStyleFor(fromEl.getBoundingClientRect());
-    const toPin = clonePinStyleFor(toEl.getBoundingClientRect());
+    fromRect = fromEl.getBoundingClientRect();
+    toRect = toEl.getBoundingClientRect();
+    const fromPin = clonePinStyleFor(fromRect);
+    const toPin = clonePinStyleFor(toRect);
 
     while (fromStaging.firstChild) fromStaging.removeChild(fromStaging.firstChild);
     while (toStaging.firstChild) toStaging.removeChild(toStaging.firstChild);
@@ -277,10 +306,14 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
     // paint record" and the shader degrades to a hard cut. The shader blends from
     // full-opacity textures via u_progress, so force the clones visible. Cf.
     // forceSceneVisibleInClone (html2canvas path).
-    for (const [clone, pin] of [
-      [fromClone, fromPin],
-      [toClone, toPin],
+    for (const [clone, pin, live] of [
+      [fromClone, fromPin, fromEl],
+      [toClone, toPin, toEl],
     ] as const) {
+      const liveStyle = getComputedStyle(live);
+      for (const property of CLONE_INHERITED_TEXT_PROPERTIES) {
+        clone.style.setProperty(property, liveStyle.getPropertyValue(property));
+      }
       clone.style.opacity = "1";
       clone.style.visibility = "visible";
       clone.style.position = "absolute";
@@ -321,7 +354,7 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
 
     const fromChild = fromStaging.firstElementChild;
     const toChild = toStaging.firstElementChild;
-    if (!fromChild || !toChild) {
+    if (!fromChild || !toChild || !fromRect || !toRect) {
       pWin.__hf_page_composite_pending = false;
       return false;
     }
@@ -333,23 +366,38 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
       return false;
     }
 
+    // The staging canvases sit behind the page, so a bitmap left on them shows through any
+    // transparent area of the composition after the transition; clear once uploaded or failed.
+    const clearStaging = (): void => {
+      fromCtx.clearRect(0, 0, width, height);
+      toCtx.clearRect(0, 0, width, height);
+    };
     try {
       fromCtx.fillStyle = options.bgColor;
       fromCtx.fillRect(0, 0, width, height);
-      fromCtx.drawElementImage(fromChild, 0, 0, width, height);
+      // Each clone draws into its own live box, so a scene smaller than the frame keeps its layout.
+      fromCtx.drawElementImage(
+        fromChild,
+        fromRect.left,
+        fromRect.top,
+        fromRect.width,
+        fromRect.height,
+      );
 
       toCtx.fillStyle = options.bgColor;
       toCtx.fillRect(0, 0, width, height);
-      toCtx.drawElementImage(toChild, 0, 0, width, height);
+      toCtx.drawElementImage(toChild, toRect.left, toRect.top, toRect.width, toRect.height);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn("[HyperShader] page-side compositor: drawElementImage failed:", err);
+      clearStaging();
       pWin.__hf_page_composite_pending = false;
       return false;
     }
 
     uploadTextureSource(gl as WebGLRenderingContext, fromTex, fromStaging);
     uploadTextureSource(gl as WebGLRenderingContext, toTex, toStaging);
+    clearStaging();
 
     try {
       renderShader(
