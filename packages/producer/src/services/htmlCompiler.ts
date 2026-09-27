@@ -115,7 +115,8 @@ export interface CompiledComposition {
 
 const INFERRED_MEDIA_DURATION_ATTR = "data-hf-inferred-duration";
 
-const isRegularFile = (path: string) => statSync(path, { throwIfNoEntry: false })?.isFile() ?? false;
+const isRegularFile = (path: string) =>
+  statSync(path, { throwIfNoEntry: false })?.isFile() ?? false;
 
 /** Adapts linkedom's `parseHTML` to the `checkSubCompositionUsability` contract. */
 function parseSubCompHtmlForValidity(html: string): ParsableDocumentLike {

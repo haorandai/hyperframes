@@ -1,6 +1,6 @@
 export { shouldBlockRender } from "./shouldBlockRender.js";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { rewriteAssetPath } from "@hyperframes/parsers/asset-paths";
 import { checkSubCompositionUsability } from "@hyperframes/parsers/sub-composition-validity";
@@ -625,6 +625,12 @@ function lintMissingOrEmptySubComposition(
       if (!existsSync(filePath)) {
         if (!checked.has(srcPath)) {
           checked.set(srcPath, { srcPath, problem: "the file does not exist" });
+        }
+        continue;
+      }
+      if (!statSync(filePath).isFile()) {
+        if (!checked.has(srcPath)) {
+          checked.set(srcPath, { srcPath, problem: "it is a folder, not an HTML file" });
         }
         continue;
       }
