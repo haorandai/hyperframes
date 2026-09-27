@@ -11,19 +11,19 @@
 
   variables:
     card_label (string)   title of the card that gets dragged
-    accent (color)        slot highlight, chips and count badges
+    accent (color)        drop slot highlight
     tone (light|dark)     board surface
 
-  envelope (default 5s): arrive 0-0.9s, grab 1.05s, carry 1.3-2.4s, drop 2.4s,
-  hold, exit in the last 0.65s. Shorter durations compress every beat evenly.
+  envelope (default 3.6s): arrive 0-0.5s, grab 0.7s, carry 0.9-2.0s, drop 2.0s,
+  hold, drift aside 2.6s, exit in the last 0.5s. Shorter durations compress every beat evenly.
 -->
 <html
   lang="en"
   data-composition-id="cursor-drag-drop"
-  data-composition-duration="5"
+  data-composition-duration="3.6"
   data-composition-variables='[
     { "id": "card_label", "type": "string", "role": "content", "label": "Dragged card", "default": "Fix checkout validation" },
-    { "id": "accent", "type": "color", "role": "style", "label": "Accent", "default": "#5b5bf6" },
+    { "id": "accent", "type": "color", "role": "style", "label": "Accent", "default": "#0a84ff" },
     { "id": "tone", "type": "enum", "role": "style", "label": "Board tone", "default": "light", "options": [ { "value": "light", "label": "Light" }, { "value": "dark", "label": "Dark" } ] }
   ]'
 >
@@ -40,12 +40,14 @@
           overflow: hidden;
           isolation: isolate;
           font-family: var(--font-body, Inter, system-ui, sans-serif);
-          --dd-accent: #5b5bf6;
+          --dd-accent: #0a84ff;
           --dd-col: #eceef4;
           --dd-card: #ffffff;
           --dd-text: #151823;
           --dd-muted: #6b7085;
           --dd-line: rgba(21, 24, 35, 0.08);
+          --dd-badge: #e4e4e7;
+          --dd-badge-text: #3f3f46;
         }
         #root[data-tone="dark"] {
           --dd-col: #1b1e29;
@@ -53,6 +55,8 @@
           --dd-text: #f2f3f7;
           --dd-muted: #9a9fb3;
           --dd-line: rgba(255, 255, 255, 0.08);
+          --dd-badge: #3f3f46;
+          --dd-badge-text: #e4e4e7;
         }
         .dd-stage {
           position: absolute;
@@ -87,8 +91,8 @@
           border-radius: 999px;
           font-size: 20px;
           text-align: center;
-          color: var(--dd-accent);
-          background: color-mix(in srgb, var(--dd-accent) 14%, transparent);
+          color: var(--dd-badge-text);
+          background: var(--dd-badge);
         }
         .dd-card,
         .dd-slot {
@@ -155,6 +159,7 @@
         }
         .dd-slot {
           border: 3px dashed color-mix(in srgb, var(--dd-muted) 45%, transparent);
+          opacity: 0;
         }
         .dd-slot-hot {
           position: absolute;
@@ -168,9 +173,8 @@
           position: absolute;
           left: 0;
           top: 0;
-          width: 134px;
-          height: 134px;
-          filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.3));
+          /* The stage zoom (1.15) brings this to the family 3px/4px shadow. */
+          filter: drop-shadow(0 2.6px 3.5px rgba(0, 0, 0, 0.3));
           will-change: transform;
           z-index: 20;
         }
@@ -182,7 +186,7 @@
         }
       </style>
 
-      <div id="root" data-composition-id="cursor-drag-drop" data-duration="5" data-tone="light">
+      <div id="root" data-composition-id="cursor-drag-drop" data-duration="3.6" data-tone="light">
         <div class="dd-stage" id="dd-stage">
           <div class="dd-col" style="left: 380px">
             <div class="dd-col-head">To do <span class="dd-count" id="dd-count-a">4</span></div>
@@ -219,7 +223,7 @@
           </div>
 
           <div class="dd-cursor" id="dd-cursor" aria-hidden="true">
-            <svg id="dd-arrow" viewBox="0 0 24 24">
+            <svg viewBox="0 0 24 24">
               <path
                 d="M5 3 L5 19 L9 15 L12 22 L15 20.5 L11.5 14 L18 14 Z"
                 fill="#ffffff"
@@ -227,27 +231,6 @@
                 stroke-width="1.4"
                 stroke-linejoin="round"
               />
-            </svg>
-            <svg id="dd-hand" viewBox="0 0 24 24" style="opacity: 0">
-              <defs>
-                <g id="dd-hand-shape">
-                  <rect x="6.6" y="8.6" width="11" height="11" rx="4.2" />
-                  <circle cx="8.2" cy="8.8" r="1.7" />
-                  <circle cx="11" cy="8" r="1.7" />
-                  <circle cx="13.8" cy="8" r="1.7" />
-                  <circle cx="16.4" cy="8.8" r="1.7" />
-                  <ellipse cx="6.4" cy="13.4" rx="1.6" ry="2.4" transform="rotate(-30 6.4 13.4)" />
-                </g>
-              </defs>
-              <!-- Outline pass under a fill pass, so the overlapping parts read as one hand. -->
-              <use
-                href="#dd-hand-shape"
-                fill="#141414"
-                stroke="#141414"
-                stroke-width="2.6"
-                stroke-linejoin="round"
-              />
-              <use href="#dd-hand-shape" fill="#ffffff" />
             </svg>
           </div>
         </div>
@@ -288,7 +271,7 @@
           var duration = Math.max(
             0.001,
             parseFloat(
-              root.dataset.duration || html.getAttribute("data-composition-duration") || "5",
+              root.dataset.duration || html.getAttribute("data-composition-duration") || "3.6",
             ),
           );
           root.setAttribute("data-tone", vars.tone === "dark" ? "dark" : "light");
@@ -298,6 +281,7 @@
           var W = root.clientWidth || 1920;
           var H = root.clientHeight || 1080;
           var fit = Math.min(W / 1920, H / 1080);
+          var ZOOM = 1.15;
           $("dd-stage").style.transform =
             "translate(" +
             (W - 1920 * fit) / 2 +
@@ -305,17 +289,20 @@
             (H - 1080 * fit) / 2 +
             "px) scale(" +
             fit +
-            ") translate(960px,545px) scale(1.15) translate(-960px,-545px)";
+            ") translate(960px,545px) scale(" +
+            ZOOM +
+            ") translate(-960px,-545px)";
 
-          var s = Math.min(1, duration / 5);
-          var T_ARRIVE = 0.9 * s;
-          var T_PRESS = 1.05 * s;
-          var T_CARRY = 1.3 * s;
-          var T_DROP = 2.4 * s;
-          var T_DRIFT = 2.75 * s;
-          var T_EXIT = duration - 0.65 * s;
+          var s = Math.min(1, duration / 3.6);
+          var T_ARRIVE = 0.5 * s;
+          var T_PRESS = 0.7 * s;
+          var T_CARRY = 0.9 * s;
+          var T_DROP = 2.0 * s;
+          var T_DRIFT = 2.6 * s;
+          var T_EXIT = duration - 0.5 * s;
 
-          var easeArrive = gsap.parseEase("power4.out");
+          var easeArrive = gsap.parseEase("power3.out");
+          var easeOut = gsap.parseEase("power2.out");
           var easeCarry = gsap.parseEase("power3.inOut");
           var easeExit = gsap.parseEase("power3.in");
           var easeSettle = gsap.parseEase("back.out(2.2)");
@@ -342,8 +329,9 @@
           var ORIGIN = { x: 0, y: 0 };
           var START = { x: 2080, y: 1240 };
           var ASIDE = { x: GRIP.x + DROP.x + 110, y: GRIP.y + DROP.y + 90 };
-          var ARROW_TIP = { x: (5 / 24) * 134, y: (3 / 24) * 134 };
-          var PALM = { x: (12 / 24) * 134, y: (13.5 / 24) * 134 };
+          // 64px at 1920 wide on screen, in stage units.
+          var ARROW = (64 * (W / 1920)) / (fit * ZOOM);
+          var ARROW_TIP = { x: (5 / 24) * ARROW, y: (3 / 24) * ARROW };
 
           function carryAt(t) {
             if (t <= T_CARRY) return ORIGIN;
@@ -360,6 +348,20 @@
             if (t <= T_EXIT)
               return arc(dropped, ASIDE, 0.1, easeArrive(clamp01((t - T_DRIFT) / (0.5 * s))));
             return arc(ASIDE, START, -0.1, easeExit(clamp01((t - T_EXIT) / (duration - T_EXIT))));
+          }
+
+          function gapAt(t) {
+            var c = carryAt(t);
+            return Math.hypot(c.x - DROP.x, c.y - DROP.y);
+          }
+          // First time the card is over the drop column; the slot fades in from here.
+          var T_HOT = T_DROP;
+          for (var k = 0; k <= 200; k++) {
+            var tk = T_CARRY + ((T_DROP - T_CARRY) * k) / 200;
+            if (gapAt(tk) < 300) {
+              T_HOT = tk;
+              break;
+            }
           }
 
           function liftAt(t) {
@@ -379,10 +381,14 @@
           var slotHot = $("dd-slot-hot");
           var slot = $("dd-slot");
           var cursor = $("dd-cursor");
-          var arrow = $("dd-arrow");
-          var hand = $("dd-hand");
           var countA = $("dd-count-a");
           var countB = $("dd-count-b");
+          cursor.style.width = cursor.style.height = ARROW + "px";
+          cursor.style.transformOrigin = ARROW_TIP.x + "px " + ARROW_TIP.y + "px";
+          // Pivot the lifted card on the grip point so it stays under the arrow tip.
+          var gripX = GRIP.x - parseFloat(card.style.left);
+          var gripY = GRIP.y - parseFloat(card.style.top);
+          card.style.transformOrigin = gripX + "px " + gripY + "px";
 
           function render(t) {
             var c = carryAt(t);
@@ -407,37 +413,30 @@
               el.style.transform = "translateY(" + (-138 * close).toFixed(2) + "px)";
             });
 
-            var gap = Math.hypot(c.x - DROP.x, c.y - DROP.y);
-            var hot = t < T_DROP ? smooth(1 - gap / 300) : 1 - clamp01((t - T_DROP) / (0.3 * s));
+            var hot =
+              t < T_DROP ? smooth(1 - gapAt(t) / 300) : 1 - clamp01((t - T_DROP) / (0.3 * s));
             slotHot.style.opacity = hot.toFixed(3);
-            slot.style.opacity =
-              t < T_DROP ? "1" : (1 - clamp01((t - T_DROP) / (0.3 * s))).toFixed(3);
+            slot.style.opacity = (
+              t < T_DROP ? clamp01((t - T_HOT) / 0.12) : 1 - clamp01((t - T_DROP) / (0.3 * s))
+            ).toFixed(3);
 
             countA.textContent = t >= T_CARRY + 0.15 * s ? "3" : "4";
             countB.textContent = t >= T_DROP ? "1" : "0";
 
-            var grabbing = t >= T_PRESS && t < T_DROP;
             var p = pointerAt(t);
-            var anchor = grabbing ? PALM : ARROW_TIP;
-            var pressDip =
-              t >= T_PRESS && t < T_PRESS + 0.22 * s
-                ? 1 - 0.1 * Math.sin(Math.PI * clamp01((t - T_PRESS) / (0.22 * s)))
-                : 1;
-            var releasePop =
-              t >= T_DROP && t < T_DROP + 0.2 * s
-                ? 1 - 0.08 * Math.sin(Math.PI * clamp01((t - T_DROP) / (0.2 * s)))
-                : 1;
-            cursor.style.transformOrigin = anchor.x + "px " + anchor.y + "px";
+            // Held down at 0.9 from grab to drop, 100ms each way.
+            var press =
+              t < T_DROP
+                ? 1 - 0.1 * easeOut(clamp01((t - T_PRESS) / 0.1))
+                : 0.9 + 0.1 * easeOut(clamp01((t - T_DROP) / 0.1));
             cursor.style.transform =
               "translate(" +
-              (p.x - anchor.x).toFixed(2) +
+              (p.x - ARROW_TIP.x).toFixed(2) +
               "px," +
-              (p.y - anchor.y).toFixed(2) +
+              (p.y - ARROW_TIP.y).toFixed(2) +
               "px) scale(" +
-              (pressDip * releasePop).toFixed(4) +
+              press.toFixed(4) +
               ")";
-            arrow.style.opacity = grabbing ? "0" : "1";
-            hand.style.opacity = grabbing ? "1" : "0";
           }
 
           var clock = { t: 0 };
