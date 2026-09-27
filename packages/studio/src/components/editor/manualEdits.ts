@@ -77,6 +77,7 @@ function wrapSeekReapplyFunction(
   win: StudioManualEditSeekWindow,
   owner: Record<string, unknown> | undefined,
   key: string,
+  reapplyWhenHeldSeekLands = false,
 ): boolean {
   const fn = owner?.[key];
   if (!owner || typeof fn !== "function") return false;
@@ -86,6 +87,11 @@ function wrapSeekReapplyFunction(
   const wrappedSeek = function (this: unknown, ...args: unknown[]): unknown {
     const result = seek.apply(this, args);
     win.__hfStudioManualEditsApply?.();
+    if (reapplyWhenHeldSeekLands)
+      void win.__hfWaitForSeekCompletion?.().then(
+        () => win.__hfStudioManualEditsApply?.(),
+        () => {},
+      );
     return result;
   };
   markWrapped(wrappedSeek);
@@ -255,7 +261,7 @@ export function installStudioManualEditSeekReapply(win: Window, apply: () => voi
   studioWin[STUDIO_MANUAL_EDITS_APPLY_PROP] = apply;
 
   const wrappedHfSeek = wrapSeekReapplyFunction(studioWin, studioWin.__hf, "seek");
-  const wrappedPlayerSeek = wrapSeekReapplyFunction(studioWin, studioWin.__player, "seek");
+  const wrappedPlayerSeek = wrapSeekReapplyFunction(studioWin, studioWin.__player, "seek", true);
   const wrappedPlayerRenderSeek = wrapSeekReapplyFunction(
     studioWin,
     studioWin.__player,

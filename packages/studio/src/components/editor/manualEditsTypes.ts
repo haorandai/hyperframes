@@ -59,6 +59,7 @@ export type StudioManualEditSeekWindow = Window & {
   __timeline?: Record<string, unknown>;
   __timelines?: Record<string, Record<string, unknown>>;
   __hfStudioManualEditsApply?: () => void;
+  __hfWaitForSeekCompletion?: () => Promise<void>;
   __hfStudioManualEditsPlaybackFrame?: number | null;
 };
 

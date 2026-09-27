@@ -432,6 +432,27 @@ describe("studio manual edits", () => {
     expect(applied).toBe(11);
   });
 
+  it("reapplies again once a held player seek lands", async () => {
+    const previewWindow = new Window() as unknown as Parameters<
+      typeof installStudioManualEditSeekReapply
+    >[0] & { __player: Record<string, unknown>; __hfWaitForSeekCompletion: () => Promise<void> };
+    let landed = () => {};
+    previewWindow.__player = { seek: () => {} };
+    previewWindow.__hfWaitForSeekCompletion = () =>
+      new Promise<void>((resolve) => (landed = resolve));
+    let applied = 0;
+    installStudioManualEditSeekReapply(previewWindow, () => {
+      applied += 1;
+    });
+
+    (previewWindow.__player.seek as (time: number) => void)(5.5);
+    expect(applied).toBe(1);
+    landed();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(applied).toBe(2);
+  });
+
   it("reapplies manual edits while fresh playback is active", () => {
     const window = new Window();
     const frames: FrameRequestCallback[] = [];
