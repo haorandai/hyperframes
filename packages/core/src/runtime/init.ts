@@ -2976,6 +2976,7 @@ export function initSandboxRuntimeModular(): void {
   let assetsReadyStarted = false;
   let assetsSettled = false;
   let liveRootDurationOverrideSeconds = 0;
+  let lastPostedManifest = "";
   const computeClipTreeSignature = (): string => {
     let sig = "";
     for (const el of document.querySelectorAll("[data-start]")) {
@@ -3001,6 +3002,7 @@ export function initSandboxRuntimeModular(): void {
       canonicalFps: state.canonicalFps,
     });
     window.__clipManifest = payload;
+    lastPostedManifest = JSON.stringify(payload);
 
     const currentSignature = computeClipTreeSignature();
     if (clipTreeSignature !== currentSignature) {
@@ -3032,6 +3034,14 @@ export function initSandboxRuntimeModular(): void {
       });
     }
     scheduleRootStageLayoutDiagnostics();
+  };
+
+  // What no observer sees (a label, a track or an inline z-index edited on a playing clip) still reaches Studio.
+  const postTimelineIfManifestChanged = () => {
+    const manifest = JSON.stringify(
+      collectRuntimeTimelinePayload({ canonicalFps: state.canonicalFps }),
+    );
+    if (manifest !== lastPostedManifest) postTimeline();
   };
 
   const finitePositiveDuration = (value: number | null | undefined): number =>
@@ -4182,6 +4192,8 @@ export function initSandboxRuntimeModular(): void {
         // change happens to wake the loop again.
         postTimeline();
         compositionChangePending = false;
+      } else if (playingPollDue) {
+        postTimelineIfManifestChanged();
       }
       if (changeDrivenService || pausedCounterDue(MEDIA_BIND_INTERVAL_FRAMES)) {
         bindMediaMetadataListeners();

@@ -510,6 +510,31 @@ describe("parked transport loop", () => {
     expect(posted.filter((m) => m["type"] === "timeline").length - before).toBe(0);
   });
 
+  it("posts a playing clip's new track, label and z-index on the next poll", async () => {
+    mount(
+      '<div id="clip" data-start="0" data-duration="5" data-track-index="0" data-timeline-label="Before" style="z-index: 1"></div>',
+    );
+    initSandboxRuntimeModular();
+    quiesce();
+    window.__player!.play();
+    for (let i = 0; i < 300; i += 1) frame120Hz();
+    const clip = document.getElementById("clip")!;
+    clip.setAttribute("data-track-index", "7");
+    clip.setAttribute("data-timeline-label", "After");
+    clip.style.zIndex = "9";
+    await flushObservers();
+    for (let i = 0; i < 130; i += 1) frame120Hz();
+    const clips = (posted.filter((m) => m["type"] === "timeline").at(-1)?.["clips"] ?? []) as Array<
+      Record<string, unknown>
+    >;
+    const clip_ = clips.find((c) => c["id"] === "clip");
+    expect([clip_?.["track"], clip_?.["timelineLabel"], clip_?.["zIndex"]]).toEqual([
+      7,
+      "After",
+      9,
+    ]);
+  });
+
   it("applies a data-width change while playing", async () => {
     mount();
     initSandboxRuntimeModular();
