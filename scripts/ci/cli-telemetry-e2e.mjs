@@ -135,6 +135,7 @@ globalThis.fetch = async function (input, init) {
   return realFetch(input, init);
 };
 // The exit-time flushSync() child would send past the wrapper above: run its script here instead.
+// It runs inside the exit handler, so the wrapper must record before its first await.
 const childProcess = require("node:child_process");
 const realSpawn = childProcess.spawn;
 childProcess.spawn = function (command, args, options) {

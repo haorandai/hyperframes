@@ -240,9 +240,9 @@ export function printStalePinNotice(cwd: string = process.cwd()): void {
   });
   if (stale.length === 0) return;
 
-  const config = readConfig();
-  const last = config.lastStalePinNoticeAt ?? 0;
+  const last = readConfig().lastStalePinNoticeAt ?? 0;
   if (Date.now() - last < STALE_PIN_THROTTLE_MS) return;
+  const config = readConfigFresh();
   config.lastStalePinNoticeAt = Date.now();
   writeConfig(config);
 

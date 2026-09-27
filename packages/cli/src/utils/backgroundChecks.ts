@@ -1,22 +1,36 @@
 import { spawn } from "node:child_process";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readConfig, readConfigFresh, writeConfig } from "../telemetry/config.js";
 import { skillsCheckDue } from "./skillsUpdateCheck.js";
 import { updateCheckDue } from "./updateCheck.js";
 
+/** A check that did not refresh its cache (offline, DNS down) is retried at most this often. */
+const FAILED_CHECK_RETRY_MS = 60 * 60 * 1000;
+
+function attemptedRecently(stamp: string | undefined, now: number): boolean {
+  return stamp !== undefined && now - new Date(stamp).getTime() < FAILED_CHECK_RETRY_MS;
+}
+
 /** Refresh the due update and skills caches in a detached child, so this process never waits on it. */
 export function launchBackgroundChecks(): void {
-  const due = [updateCheckDue() && "update", skillsCheckDue() && "skills"].filter(
-    (check): check is string => typeof check === "string",
-  );
+  const now = Date.now();
+  const config = readConfig();
+  const due: string[] = [];
+  if (updateCheckDue() && !attemptedRecently(config.lastUpdateAttemptAt, now)) due.push("update");
+  if (skillsCheckDue() && !attemptedRecently(config.lastSkillsAttemptAt, now)) due.push("skills");
   if (due.length === 0) return;
-  const sourceMode = import.meta.url.endsWith(".ts");
-  const worker = new URL(
-    sourceMode ? "../backgroundChecksWorker.ts" : "./backgroundChecksWorker.js",
-    import.meta.url,
-  );
-  const execArgv = sourceMode ? ["--import", "tsx"] : [];
+
+  const stamped = readConfigFresh();
+  const at = new Date(now).toISOString();
+  if (due.includes("update")) stamped.lastUpdateAttemptAt = at;
+  if (due.includes("skills")) stamped.lastSkillsAttemptAt = at;
+  writeConfig(stamped);
+
+  // Next to the bundled cli.js; from source (dev mode) no check is ever due.
+  const worker = join(dirname(fileURLToPath(import.meta.url)), "backgroundChecksWorker.js");
   try {
-    const child = spawn(process.execPath, [...execArgv, fileURLToPath(worker), ...due], {
+    const child = spawn(process.execPath, [worker, ...due], {
       detached: true,
       stdio: "ignore",
       windowsHide: true,
