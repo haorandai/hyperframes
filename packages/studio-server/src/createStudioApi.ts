@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { Hono } from "hono";
 import type { StudioApiAdapter } from "./types.js";
 import { registerProjectRoutes } from "./routes/projects.js";
@@ -28,6 +29,15 @@ export function createStudioApi(adapter: StudioApiAdapter): Hono {
   api.use(async function answerProjectDirMissingAfterErrorHandlers(c, next) {
     await next();
     if (isProjectRootMissing(c.error)) c.res = projectDirMissing(c);
+  });
+  // A request that fails once its project folder has vanished failed because of that, whatever the route answered.
+  api.use("/projects/:id/*", async function answerProjectDirMissingForVanishedFolder(c, next) {
+    await next();
+    if (c.res.status < 403) return;
+    const project = await Promise.resolve()
+      .then(() => adapter.resolveProject(c.req.param("id")))
+      .catch(() => null);
+    if (project && !existsSync(project.dir)) c.res = projectDirMissing(c);
   });
 
   registerProjectRoutes(api, adapter);

@@ -308,6 +308,31 @@ describe("resolveProjectPath why", () => {
     await expectProjectGone(await upload(createStudioApi(adapter)), project);
   });
 
+  it.each([
+    ["a save", "arrayBuffer", "PUT", "files/inside.txt", "new"],
+    ["a rename", "text", "PATCH", "files/inside.txt", JSON.stringify({ newPath: "moved.txt" })],
+    ["a duplicate", "text", "POST", "duplicate-file", JSON.stringify({ path: "inside.txt" })],
+  ] as const)(
+    "answers that the project folder is gone when it vanishes while %s reads its body",
+    async (_, read, method, route, body) => {
+      const { project, adapter } = fixture();
+      const readBody = Request.prototype[read];
+      vi.spyOn(Request.prototype, read).mockImplementation(function (this: Request) {
+        renameSync(project, `${project}-renamed`);
+        return readBody.call(this);
+      });
+      const response = await createStudioApi(adapter).request(
+        `http://localhost/projects/demo/${route}`,
+        {
+          method,
+          headers: { "Content-Type": "application/json", "If-Match": fileContentVersion("inside") },
+          body,
+        },
+      );
+      await expectProjectGone(response, project);
+    },
+  );
+
   it("reports a missing project directory as 404, not 403", async () => {
     const { app, project } = fixture();
     rmSync(project, { recursive: true, force: true });
