@@ -15,15 +15,25 @@ function fpsToFfmpegArg(fps: Fps): string {
   return fps.den === 1 ? String(fps.num) : `${fps.num}/${fps.den}`;
 }
 
+// Fully opaque frames can arrive as RGB PNGs among RGBA ones. The format change would
+// rebuild the filter graph, which paletteuse cannot survive (ffmpeg exits 190).
+function framesInput(input: GifEncodeArgsInput, fpsArg: string): string[] {
+  return [
+    "-framerate",
+    fpsArg,
+    "-reinit_filter",
+    "0",
+    "-i",
+    join(input.framesDir, input.framePattern),
+  ];
+}
+
 export function buildGifPalettegenArgs(input: GifEncodeArgsInput): string[] {
   const fpsArg = fpsToFfmpegArg(input.fps);
   const transparency = input.preserveAlpha ? ":reserve_transparent=1" : "";
   return [
     "-y",
-    "-framerate",
-    fpsArg,
-    "-i",
-    join(input.framesDir, input.framePattern),
+    ...framesInput(input, fpsArg),
     "-vf",
     `fps=${fpsArg},palettegen=stats_mode=diff${transparency}`,
     input.palettePath,
@@ -35,10 +45,7 @@ export function buildGifPaletteuseArgs(input: GifEncodeArgsInput): string[] {
   const transparency = input.preserveAlpha ? ":alpha_threshold=128" : "";
   return [
     "-y",
-    "-framerate",
-    fpsArg,
-    "-i",
-    join(input.framesDir, input.framePattern),
+    ...framesInput(input, fpsArg),
     "-i",
     input.palettePath,
     "-lavfi",
