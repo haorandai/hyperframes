@@ -205,11 +205,13 @@ describe("FONT_ALIASES cross-platform coverage", () => {
   });
 });
 
+const styled = (css: string) => `<html><head><style>${css}</style></head><body>Hello</body></html>`;
+
 describe("var() font-family fallbacks", () => {
   const noProperties = new Map<string, string>();
 
   it("injects the fallback family of an undefined custom property", async () => {
-    const html = `<html><head><style>body { font-family: var(--font-body, Inter, system-ui, sans-serif); }</style></head><body>Hello</body></html>`;
+    const html = styled(`body { font-family: var(--font-body, Inter, system-ui, sans-serif); }`);
     const result = await injectDeterministicFontFaces(html, { allowSystemFontCapture: false });
     expect(result).toContain(`font-family: "Inter";`);
   });
@@ -276,7 +278,7 @@ describe("var() font-family fallbacks", () => {
   it.each(["inherit", "var(--font-body, inherit)"])(
     "treats %s as a keyword, not a font to fetch",
     async (value) => {
-      const html = `<html><head><style>body { font-family: ${value}; }</style></head><body>Hello</body></html>`;
+      const html = styled(`body { font-family: ${value}; }`);
       const fetchImpl = Object.assign(async () => new Response("", { status: 404 }), {
         preconnect: fetch.preconnect,
       });
@@ -291,15 +293,12 @@ describe("var() font-family fallbacks", () => {
   );
 
   it("requests no family for an undefined var() without a fallback", async () => {
-    const html = `<html><head><style>body { font-family: var(--font-body); }</style></head><body>Hello</body></html>`;
+    const html = styled(`body { font-family: var(--font-body); }`);
     expect(await injectDeterministicFontFaces(html, { allowSystemFontCapture: false })).toBe(html);
   });
 });
 
 describe("system-font primaries behind var()", () => {
-  const styled = (css: string) =>
-    `<html><head><style>${css}</style></head><body>Hello</body></html>`;
-
   it.each([
     [
       `var(--font-display, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif)`,

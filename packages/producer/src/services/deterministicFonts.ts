@@ -347,15 +347,15 @@ function resolveDeclaredFamilies(
   if (!variable) return tag(families);
 
   const resolved = customProperties.get(variable.name);
-  let primary: ResolvedFamily[];
-  if (resolved) {
-    primary = resolveDeclaredFamilies(resolved, customProperties, fallbackOnly, depth + 1);
-  } else if (variable.fallback !== null) {
-    // An undefined property uses the var() fallback, as the browser does.
-    primary = resolveDeclaredFamilies(variable.fallback, customProperties, true, depth + 1);
-  } else {
-    return tag(families);
-  }
+  // An undefined property uses the var() fallback, as the browser does.
+  const source = resolved || variable.fallback;
+  if (source === null) return tag(families);
+  const primary = resolveDeclaredFamilies(
+    source,
+    customProperties,
+    fallbackOnly || !resolved,
+    depth + 1,
+  );
   return [...primary, ...tag(families.slice(1))];
 }
 
