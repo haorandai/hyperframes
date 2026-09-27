@@ -20,6 +20,13 @@ describe("lazyPreviewImages", () => {
     ).toEqual([null, "lazy", "eager", null, null]);
   });
 
+  it("keeps an authored loading attribute in any letter case", () => {
+    const html = doc(
+      '<div data-start="5"><IMG LOADING="eager" src="a.png"><img Loading="eager" src="b.png"></div>',
+    );
+    expect(lazyPreviewImages(html)).toBe(html);
+  });
+
   it("leaves script text and fragments untouched", () => {
     const script = '<script>el.innerHTML = "<img src=x.png>";</script>';
     expect(lazyPreviewImages(doc(`${script}<div data-start="5"></div>`))).toContain(script);
