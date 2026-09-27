@@ -3255,10 +3255,11 @@ export function registerFileRoutes(api: Hono, adapter: StudioApiAdapter): void {
       const subDir = c.req.query("dir") ?? "";
       const targetDir = subDir ? resolveWithinProject(project.dir, subDir) : project.dir;
       if (!targetDir) return c.json({ error: "forbidden" }, 403);
-      mkdirWithinProject(project.dir, targetDir);
 
       const formData = await c.req.formData();
+      mkdirWithinProject(project.dir, targetDir);
       const result = await processUploadedFiles(formData, targetDir, project.dir);
+      if (!existsSync(project.dir)) return projectDirMissing(c);
 
       return c.json(
         { ok: true, files: result.uploaded, skipped: result.skipped, invalid: result.invalid },

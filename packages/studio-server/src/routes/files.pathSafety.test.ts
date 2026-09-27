@@ -296,6 +296,41 @@ describe("resolveProjectPath why", () => {
     expect(existsSync(project)).toBe(false);
   });
 
+  it("answers that the project folder is gone when it is renamed while an upload streams in", async () => {
+    const { project } = fixture();
+    const api = createStudioApi({
+      listProjects: () => [],
+      resolveProject: async (id) => ({ id, dir: project }),
+      bundle: async () => null,
+      lint: async () => ({ findings: [] }),
+      runtimeUrl: "/api/runtime.js",
+      rendersDir: () => join(project, "renders"),
+      startRender: () => ({ id: "job", status: "rendering", progress: 0, outputPath: "out.mp4" }),
+    } as StudioApiAdapter);
+    const form = new FormData();
+    form.append("files", new File(["upload bytes"], "clip.txt"));
+    const encoded = new Response(form);
+    const bytes = new Uint8Array(await encoded.arrayBuffer());
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        renameSync(project, `${project}-renamed`);
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    });
+
+    const response = await api.request("http://localhost/projects/demo/upload", {
+      method: "POST",
+      headers: { "Content-Type": encoded.headers.get("Content-Type")! },
+      body,
+      duplex: "half",
+    } as RequestInit);
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ why: "project_dir_missing" });
+    expect(existsSync(project)).toBe(false);
+  });
+
   it("reports a missing project directory as 404, not 403", async () => {
     const { app, project } = fixture();
     rmSync(project, { recursive: true, force: true });
