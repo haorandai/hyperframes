@@ -8,9 +8,9 @@ import {
   injectScriptsIntoHtml,
   insertBeforeCloseTag,
   stripEmbeddedRuntimeScripts,
-  STUDIO_PREVIEW_MARK_ATTR,
   type BundleOptions,
 } from "@hyperframes/core/compiler";
+import { STUDIO_PREVIEW_MARK_ATTR } from "@hyperframes/core/studio-preview-mark";
 import { isWithinProjectRoot } from "@hyperframes/parsers/asset-resolution";
 import type { ResolvedProject, StudioApiAdapter } from "../types.js";
 import { resolveWithinProject } from "../helpers/safePath.js";
