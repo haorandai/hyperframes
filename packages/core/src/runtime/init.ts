@@ -9,6 +9,7 @@ import {
   skipsHiddenImages,
   UPCOMING_ATTR,
 } from "./timedClipHide";
+import { STUDIO_PREVIEW_LAZY_ATTR } from "../studioPreviewMark";
 import { initRuntimeAnalytics, emitAnalyticsEvent } from "./analytics";
 import { injectCompositionCssVariables } from "./getVariables";
 import { createCssAdapter } from "./adapters/css";
@@ -3540,7 +3541,7 @@ export function initSandboxRuntimeModular(): void {
       const held = { time: quantized, apply: () => applySeek(quantized, options) };
       heldSeek = held;
       for (const img of undecoded) {
-        img.loading = "eager";
+        if (img.hasAttribute(STUDIO_PREVIEW_LAZY_ATTR)) img.setAttribute("loading", "eager");
         for (let clip = img.closest(SKIPPED_CLIP); clip; clip = img.closest(SKIPPED_CLIP))
           clip.setAttribute(UPCOMING_ATTR, "");
       }

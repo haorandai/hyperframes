@@ -18,6 +18,9 @@ describe("lazyPreviewImages", () => {
     expect(
       ["first", "later", "authored", "referenced", "untimed"].map((id) => loadingOf(html, id)),
     ).toEqual([null, "lazy", "eager", null, null]);
+    expect(html.match(/<img[^>]*data-hf-preview-lazy[^>]*>/g)).toEqual([
+      '<img loading="lazy" data-hf-preview-lazy id="later" src="b.png">',
+    ]);
   });
 
   it("keeps an authored loading attribute in any letter case", () => {
@@ -54,7 +57,9 @@ describe("lazyPreviewImages", () => {
     const head = "<head><title>a &amp;lt;x &amp; y</title></head>";
     const body = '<div title="a &amp;amp;lt;b" data-start="5"><img src="b.png?x=1&amp;y=2"></div>';
     const html = `<!DOCTYPE html><html>${head}<body>${body}</body></html>`;
-    expect(lazyPreviewImages(html)).toBe(html.replace("<img ", '<img loading="lazy" '));
+    expect(lazyPreviewImages(html)).toBe(
+      html.replace("<img ", '<img loading="lazy" data-hf-preview-lazy '),
+    );
   });
 
   it("stays linear on unclosed comments and raw text", () => {
@@ -65,7 +70,7 @@ describe("lazyPreviewImages", () => {
       const started = performance.now();
       const out = lazyPreviewImages(html);
       expect(performance.now() - started, unit).toBeLessThan(1000);
-      expect(out, unit).toBe(html.replace("<img ", '<img loading="lazy" '));
+      expect(out, unit).toBe(html.replace("<img ", '<img loading="lazy" data-hf-preview-lazy '));
     }
   });
 });

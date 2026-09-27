@@ -20,11 +20,12 @@ afterEach(() => {
 });
 
 describe("useAskAgentModal", () => {
-  it("sends the live element without the preview's lazy loading or look-ahead mark", async () => {
+  it("sends the live element without the preview's lazy loading or look-ahead mark, keeping authored loading", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
     const element = document.createElement("div");
     element.setAttribute("data-hf-upcoming", "");
-    element.innerHTML = '<img src="plate.png" loading="lazy">';
+    element.innerHTML =
+      '<img src="plate.png" loading="lazy" data-hf-preview-lazy><img src="own.png" loading="eager">';
     const selection: DomEditSelection = {
       element,
       label: "Plate",
@@ -70,8 +71,8 @@ describe("useAskAgentModal", () => {
 
     await act(async () => hook!.handleAgentModalSubmit("Make it bigger"));
 
-    expect(copied[0]).toContain('<img src="plate.png">');
-    expect(copied[0]).not.toContain("loading=");
+    expect(copied[0]).toContain('<img src="plate.png"><img src="own.png" loading="eager">');
+    expect(copied[0]).not.toContain("data-hf-preview-lazy");
     expect(copied[0]).not.toContain("data-hf-upcoming");
   });
 });

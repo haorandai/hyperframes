@@ -1,7 +1,7 @@
 // fallow-ignore-file code-duplication
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HF_COLOR_GRADING_ATTR, serializeHfColorGrading } from "../colorGrading";
-import { STUDIO_PREVIEW_MARK_META } from "../studioPreviewMark";
+import { STUDIO_PREVIEW_LAZY_ATTR, STUDIO_PREVIEW_MARK_META } from "../studioPreviewMark";
 import type { RuntimeTimelineLike } from "./types";
 
 function pausedTimeline(duration: number): RuntimeTimelineLike {
@@ -170,8 +170,13 @@ describe("runtime entry", () => {
     const current = timed(root, "div", "0");
     const later = timed(root, "div", "5");
     const plate = later.appendChild(document.createElement("img"));
+    plate.setAttribute("loading", "lazy");
+    plate.setAttribute(STUDIO_PREVIEW_LAZY_ATTR, "");
     let decoded = () => {};
     plate.decode = () => new Promise<void>((resolve) => (decoded = resolve));
+    const authored = later.appendChild(document.createElement("img"));
+    authored.setAttribute("loading", "lazy");
+    authored.decode = () => Promise.resolve();
 
     await evaluateRuntime();
     expect(window.__player?.seek(0.5)).toBeUndefined();
@@ -181,6 +186,7 @@ describe("runtime entry", () => {
     expect(visibility(current, later)).toEqual(["visible", "hidden"]);
     expect(imageSkipped(later)).toEqual([false]);
     expect(window.__player?.getTime()).toBe(5.5);
+    expect([plate, authored].map((img) => img.getAttribute("loading"))).toEqual(["eager", "lazy"]);
     decoded();
     await landed;
     expect(visibility(current, later)).toEqual(["hidden", "visible"]);

@@ -1,5 +1,6 @@
 import { findStartTags } from "@hyperframes/core/compiler/html-document";
 import { parseHTML } from "linkedom";
+import { STUDIO_PREVIEW_LAZY_ATTR } from "@hyperframes/core/studio-preview-mark";
 
 // A start that is not a plain number (a reference) counts as unknown and keeps the image eager.
 function startsAfterZero(el: Element): boolean {
@@ -23,7 +24,7 @@ export function lazyPreviewImages(html: string): string {
   images.forEach((img, i) => {
     if (hasLoading(img) || !startsAfterZero(img)) return;
     const at = (tags[i] ?? 0) + 4;
-    parts.push(html.slice(from, at), ' loading="lazy"');
+    parts.push(html.slice(from, at), ` loading="lazy" ${STUDIO_PREVIEW_LAZY_ATTR}`);
     from = at;
   });
   parts.push(html.slice(from));
