@@ -38,7 +38,7 @@ test(
     const fake = join(dir, "fake-ffprobe");
     writeFileSync(
       fake,
-      `#!/bin/sh\necho '{"streams":[{"width":7,"height":3,"codec_name":"fake"}]}'\n`,
+      `#!/bin/sh\n[ "$1" = -version ] && echo 'ffprobe version fake' && exit 0\necho '{"streams":[{"width":7,"height":3,"codec_name":"fake"}]}'\n`,
     );
     chmodSync(fake, 0o755);
     const configured = process.env.HYPERFRAMES_FFPROBE_PATH;
@@ -94,42 +94,55 @@ function withFfprobePath(value, run) {
   }
 }
 
-test("probe refuses a configured ffprobe that cannot start or exits with an error", {
-  skip: process.platform === "win32",
-}, () => {
-  const dir = mkdtempSync(join(tmpdir(), "probe-broken-ffprobe-"));
-  try {
-    const noInterpreter = join(dir, "no-interpreter");
-    writeFileSync(noInterpreter, "#!/nonexistent/interpreter\n");
-    const failing = join(dir, "failing");
-    writeFileSync(failing, "#!/bin/sh\nexit 3\n");
-    for (const broken of [noInterpreter, failing]) {
-      chmodSync(broken, 0o755);
-      withFfprobePath(broken, () =>
-        assert.throws(() => probe("clip.wav"), /HYPERFRAMES_FFPROBE_PATH names .*fix it or unset it/),
-      );
+test(
+  "probe refuses a configured ffprobe that cannot start, exits with an error, or is another tool",
+  {
+    skip: process.platform === "win32",
+  },
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), "probe-broken-ffprobe-"));
+    try {
+      const noInterpreter = join(dir, "no-interpreter");
+      writeFileSync(noInterpreter, "#!/nonexistent/interpreter\n");
+      const failing = join(dir, "failing");
+      writeFileSync(failing, "#!/bin/sh\nexit 3\n");
+      const otherTool = join(dir, "other-tool");
+      writeFileSync(otherTool, "#!/bin/sh\necho 'ffmpeg version 9.9'\n");
+      for (const broken of [noInterpreter, failing, otherTool]) {
+        chmodSync(broken, 0o755);
+        withFfprobePath(broken, () =>
+          assert.throws(
+            () => probe("clip.wav"),
+            /HYPERFRAMES_FFPROBE_PATH names .*fix it or unset it/,
+          ),
+        );
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+  },
+);
 
-test("probe runs a relative HYPERFRAMES_FFPROBE_PATH from the working folder, not from PATH", {
-  skip: process.platform === "win32",
-}, () => {
-  const dir = mkdtempSync(join(tmpdir(), "probe-relative-ffprobe-"));
-  const prevCwd = process.cwd();
-  try {
-    writeFileSync(
-      join(dir, "local-ffprobe"),
-      `#!/bin/sh\necho '{"streams":[{"width":5,"height":4,"codec_name":"local"}]}'\n`,
-    );
-    chmodSync(join(dir, "local-ffprobe"), 0o755);
-    process.chdir(dir);
-    const meta = withFfprobePath("local-ffprobe", () => probe("clip.png"));
-    assert.deepEqual(meta, { duration: null, width: 5, height: 4, codec: "local" });
-  } finally {
-    process.chdir(prevCwd);
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+test(
+  "probe runs a relative HYPERFRAMES_FFPROBE_PATH from the working folder, not from PATH",
+  {
+    skip: process.platform === "win32",
+  },
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), "probe-relative-ffprobe-"));
+    const prevCwd = process.cwd();
+    try {
+      writeFileSync(
+        join(dir, "local-ffprobe"),
+        `#!/bin/sh\n[ "$1" = -version ] && echo 'ffprobe version fake' && exit 0\necho '{"streams":[{"width":5,"height":4,"codec_name":"local"}]}'\n`,
+      );
+      chmodSync(join(dir, "local-ffprobe"), 0o755);
+      process.chdir(dir);
+      const meta = withFfprobePath("local-ffprobe", () => probe("clip.png"));
+      assert.deepEqual(meta, { duration: null, width: 5, height: 4, codec: "local" });
+    } finally {
+      process.chdir(prevCwd);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);

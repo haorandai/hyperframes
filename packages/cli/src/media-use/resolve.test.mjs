@@ -706,18 +706,22 @@ test("--doctor --json reports dependency checks and top-level ok requires ffmpeg
 
 test("--doctor checks the ffmpeg and ffprobe that HYPERFRAMES_FFMPEG_PATH and HYPERFRAMES_FFPROBE_PATH name", () => {
   const dir = mkdtempSync(join(tmpdir(), "mu-doctor-ff-"));
-  const fake = join(dir, "fake-ff");
-  writeFileSync(fake, "#!/bin/sh\necho 'ffmpeg version 9.9-fake'\n");
-  chmodSync(fake, 0o755);
+  for (const tool of ["ffmpeg", "ffprobe"]) {
+    writeFileSync(join(dir, tool), `#!/bin/sh\necho '${tool} version 9.9-fake'\n`);
+    chmodSync(join(dir, tool), 0o755);
+  }
   try {
     const result = spawnResolve(["--doctor", "--json"], {
-      env: { HYPERFRAMES_FFMPEG_PATH: fake, HYPERFRAMES_FFPROBE_PATH: fake },
+      env: {
+        HYPERFRAMES_FFMPEG_PATH: join(dir, "ffmpeg"),
+        HYPERFRAMES_FFPROBE_PATH: join(dir, "ffprobe"),
+      },
     });
     const byName = new Map(JSON.parse(result.stdout.trim()).checks.map((c) => [c.name, c]));
-    for (const name of ["ffmpeg on PATH", "ffprobe on PATH"])
+    for (const tool of ["ffmpeg", "ffprobe"])
       assert.deepEqual(
-        [byName.get(name).ok, byName.get(name).detail],
-        [true, "ffmpeg version 9.9-fake"],
+        [byName.get(`${tool} on PATH`).ok, byName.get(`${tool} on PATH`).detail],
+        [true, `${tool} version 9.9-fake`],
       );
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -736,7 +740,7 @@ test("--doctor fails a HYPERFRAMES_FFPROBE_PATH that cannot run and says to fix 
     [check.ok, check.detail, check.fix],
     [
       false,
-      `HYPERFRAMES_FFPROBE_PATH names "${missing}", which cannot run: fix it or unset it.`,
+      `HYPERFRAMES_FFPROBE_PATH names "${missing}", which is not a working ffprobe: fix it or unset it.`,
       "fix or unset that variable",
     ],
   );
@@ -770,7 +774,7 @@ test("--doctor fails a configured ffprobe that exists but exits with an error", 
       [check.ok, check.detail, check.fix],
       [
         false,
-        `HYPERFRAMES_FFPROBE_PATH names "${broken}", which cannot run: fix it or unset it.`,
+        `HYPERFRAMES_FFPROBE_PATH names "${broken}", which is not a working ffprobe: fix it or unset it.`,
         "fix or unset that variable",
       ],
     );
@@ -783,13 +787,23 @@ test("a broken HYPERFRAMES_FFPROBE_PATH is named when local voice cannot run, no
   setup();
   const missing = join(tmp, "no-ffprobe");
   const result = spawnResolve(
-    ["--type", "voice", "--intent", "hello", "--provider", "kokoro.local", "--project", tmp, "--json"],
+    [
+      "--type",
+      "voice",
+      "--intent",
+      "hello",
+      "--provider",
+      "kokoro.local",
+      "--project",
+      tmp,
+      "--json",
+    ],
     { env: { HYPERFRAMES_FFPROBE_PATH: missing } },
   );
   assert.equal(result.status, 1);
   assert.equal(
     JSON.parse(result.stdout.trim()).error,
-    `HYPERFRAMES_FFPROBE_PATH names "${missing}", which cannot run: fix it or unset it.`,
+    `HYPERFRAMES_FFPROBE_PATH names "${missing}", which is not a working ffprobe: fix it or unset it.`,
   );
   cleanup();
 });
