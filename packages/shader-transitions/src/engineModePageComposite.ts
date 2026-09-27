@@ -106,17 +106,29 @@ function stageWithAncestors(
 }
 
 /**
- * Pauses each CSS animation of `copy` at its live counterpart's time; on a fresh copy it would
+ * Pauses each copied CSS animation at its live counterpart's time; on a fresh copy it would
  * restart. One with no live counterpart has finished live, so it is cancelled.
  */
-function holdAnimationsAt(live: Element, copy: Element): void {
+function holdAnimations(liveRoot: Element, copyRoot: Element, pairs: Array<[Element, Element]>) {
+  const slot = new Map<Element, number>();
+  pairs.forEach(([live, copy], n) => {
+    slot.set(live, n);
+    slot.set(copy, n);
+  });
+  const keyOf = (a: Animation): string | null => {
+    if (!("animationName" in a)) return null;
+    const effect = a.effect as KeyframeEffect;
+    return `${slot.get(effect.target!)}|${effect.pseudoElement ?? ""}|${(a as CSSAnimation).animationName}`;
+  };
   const liveTimes = new Map<string, CSSNumberish | null>();
-  for (const a of live.getAnimations()) {
-    if ("animationName" in a) liveTimes.set((a as CSSAnimation).animationName, a.currentTime);
+  for (const a of liveRoot.getAnimations({ subtree: true })) {
+    const key = keyOf(a);
+    if (key) liveTimes.set(key, a.currentTime);
   }
-  for (const a of copy.getAnimations()) {
-    if (!("animationName" in a)) continue;
-    const time = liveTimes.get((a as CSSAnimation).animationName);
+  for (const a of copyRoot.getAnimations({ subtree: true })) {
+    const key = keyOf(a);
+    if (!key) continue;
+    const time = liveTimes.get(key);
     if (time === undefined) {
       a.cancel();
     } else {
@@ -294,17 +306,12 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
         el.style.visibility = "visible";
       });
       const { root, liveRoot, pairs } = stageWithAncestors(live, clone);
-      // A full-frame box gives the copies a sized containing block; it is then shifted so
-      // the copied root lands where the live one is (body margin, any offset it inherits).
+      // A full-frame box gives the copies a sized containing block to lay out against.
       const frame = document.createElement("div");
       frame.style.cssText = `position:absolute;left:0;top:0;width:${width}px;height:${height}px;margin:0;`;
       frame.appendChild(root);
       staging.appendChild(frame);
-      for (const [liveEl, copyEl] of pairs) holdAnimationsAt(liveEl, copyEl);
-      const liveBox = liveRoot.getBoundingClientRect();
-      const copyBox = root.getBoundingClientRect();
-      frame.style.left = `${liveBox.left - copyBox.left}px`;
-      frame.style.top = `${liveBox.top - copyBox.top}px`;
+      holdAnimations(liveRoot, root, pairs);
     }
 
     // Decode any data-URI images in clones so the browser has current

@@ -171,19 +171,23 @@ describe("page-side compositor scene copies", () => {
     vi.unstubAllGlobals();
   });
 
-  const BOX: Record<string, { left: number; top: number; width: number; height: number }> = {
-    main: { left: 0, top: 0, width: 640, height: 360 },
-    stage: { left: 0, top: 0, width: 0, height: 0 },
-    scene: { left: 160, top: 90, width: 320, height: 180 },
+  // CSS animations the stylesheet gives an element ("::before glow" runs on its pseudo-element),
+  // and the live times of those still running.
+  const CSS_ANIMATIONS: Record<string, string[]> = { stage: ["pulse", "intro", "::before glow"] };
+  const LIVE_TIMES: Record<string, Record<string, number>> = {
+    stage: { pulse: 400, "::before glow": 250 },
   };
-  // Where the stylesheet gives an element CSS animations, and the live times of those still running.
-  const CSS_ANIMATIONS: Record<string, string[]> = { stage: ["pulse", "intro"] };
-  const LIVE_TIMES: Record<string, Record<string, number>> = { stage: { pulse: 400 } };
 
   class FakeAnimation {
     currentTime: number | null = 0;
     state = "running";
-    constructor(readonly animationName: string) {}
+    readonly animationName: string;
+    readonly effect: { target: FakeEl; pseudoElement: string | null };
+    constructor(spec: string, target: FakeEl) {
+      const [pseudo, name] = spec.includes(" ") ? spec.split(" ") : [null, spec];
+      this.animationName = name!;
+      this.effect = { target, pseudoElement: pseudo ?? null };
+    }
     pause() {
       this.state = "paused";
     }
@@ -207,22 +211,23 @@ describe("page-side compositor scene copies", () => {
     get key(): string {
       return (this.copyOf ?? this).id.replace(/^scene-.*/, "scene");
     }
-    getBoundingClientRect() {
-      const box = BOX[this.key]!;
-      // Copies lay out 8px up and left of the live page, as if the body margin were missing.
-      return this.copyOf ? { ...box, left: box.left - 8, top: box.top - 8 } : box;
-    }
-    getAnimations() {
+    ownAnimations(): FakeAnimation[] {
       if (this.copyOf) return this.animations;
-      return Object.entries(LIVE_TIMES[this.key] ?? {}).map(([name, time]) => {
-        const live = new FakeAnimation(name);
+      return Object.entries(LIVE_TIMES[this.key] ?? {}).map(([spec, time]) => {
+        const live = new FakeAnimation(spec, this);
         live.currentTime = time;
         return live;
       });
     }
+    getAnimations(options?: { subtree?: boolean }): FakeAnimation[] {
+      if (!options?.subtree) return this.ownAnimations();
+      return [...this.ownAnimations(), ...this.children.flatMap((c) => c.getAnimations(options))];
+    }
     cloneNode(deep: boolean) {
       const copy = new FakeEl(`${this.id}-copy`, this);
-      copy.animations = (CSS_ANIMATIONS[this.key] ?? []).map((name) => new FakeAnimation(name));
+      copy.animations = (CSS_ANIMATIONS[this.key] ?? []).map(
+        (spec) => new FakeAnimation(spec, copy),
+      );
       if (deep) copy.children = this.children.map((c) => c.cloneNode(true));
       return copy;
     }
@@ -329,7 +334,7 @@ describe("page-side compositor scene copies", () => {
     return { calls, composite, overlay };
   }
 
-  it("stages each scene copy inside unaltered ancestor copies, aligned to the live page", async () => {
+  it("stages each scene copy inside unaltered ancestor copies in a full-frame box", async () => {
     const { calls, composite } = installTransparentInsetFilm();
     expect(await composite(1.2)).toBe(true);
     const draws = calls.filter((c) => c.op === "drawElementImage");
@@ -340,7 +345,7 @@ describe("page-side compositor scene copies", () => {
     ] as const) {
       const frame = draws[index]?.args[0] as FakeEl;
       expect(draws[index]?.args.slice(1)).toEqual([0, 0, 640, 360]);
-      expect(frame.style).toMatchObject({ left: "8px", top: "8px" });
+      expect(frame.style.cssText).toContain("width:640px;height:360px");
       const main = frame.children[0]!;
       const stage = main.children[0]!;
       const scene = stage.children[0]!;
@@ -355,19 +360,19 @@ describe("page-side compositor scene copies", () => {
     const { calls, composite } = installTransparentInsetFilm();
     await composite(1.2);
     const frame = calls.find((c) => c.op === "drawElementImage")?.args[0] as FakeEl;
-    const [pulse, intro] = frame.children[0]!.children[0]!.animations;
+    const [pulse, intro, glow] = frame.children[0]!.children[0]!.animations;
     expect(pulse).toMatchObject({ animationName: "pulse", state: "paused", currentTime: 400 });
     expect(intro).toMatchObject({ animationName: "intro", state: "cancelled" });
+    expect(glow).toMatchObject({ animationName: "glow", state: "paused", currentTime: 250 });
   });
 
-  it("aligns a scene staged directly under body to its live box", async () => {
+  it("stages a scene directly under body in the full-frame box", async () => {
     const { calls, composite } = installTransparentInsetFilm({ underBody: true });
     expect(await composite(1.2)).toBe(true);
     const draws = calls.filter((c) => c.op === "drawElementImage");
     for (const draw of draws) {
       const frame = draw.args[0] as FakeEl;
       expect(frame.children.map((c) => c.copyOf?.id.slice(0, 5))).toEqual(["scene"]);
-      expect(frame.style).toMatchObject({ left: "8px", top: "8px" });
       expect(draw.args.slice(1)).toEqual([0, 0, 640, 360]);
     }
   });
