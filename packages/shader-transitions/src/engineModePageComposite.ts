@@ -107,29 +107,28 @@ export function clonePinStyleFor(rect: {
 }
 
 /**
- * Inherited text properties a scene clone loses when it moves under the staging canvas;
- * copying the live scene's computed values keeps the composition's fonts in the textures.
+ * Wraps a scene clone in childless copies of its ancestors below `<body>`, so inherited and
+ * composition-scoped styles resolve on the clone as they do live. Returns the outermost copy
+ * and the live element it copies.
  */
-const CLONE_INHERITED_TEXT_PROPERTIES = [
-  "font-family",
-  "font-size",
-  "font-style",
-  "font-weight",
-  "font-stretch",
-  "font-variant",
-  "font-feature-settings",
-  "font-variation-settings",
-  "line-height",
-  "letter-spacing",
-  "word-spacing",
-  "color",
-  "text-align",
-  "text-transform",
-  "text-shadow",
-  "white-space",
-  "direction",
-  "writing-mode",
-] as const;
+function stageWithAncestors(
+  scene: HTMLElement,
+  clone: HTMLElement,
+): { root: HTMLElement; liveRoot: HTMLElement } {
+  let root = clone;
+  let liveRoot = scene;
+  for (
+    let el = scene.parentElement;
+    el && el !== document.body && el !== document.documentElement;
+    el = el.parentElement
+  ) {
+    const shell = el.cloneNode(false) as HTMLElement;
+    shell.appendChild(root);
+    root = shell;
+    liveRoot = el;
+  }
+  return { root, liveRoot };
+}
 
 export function isPageSideCompositingSupported(): boolean {
   if (typeof window === "undefined" || typeof document === "undefined") return false;
@@ -281,50 +280,40 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
       pWin.__hf_page_composite_pending = false;
       return false;
     }
-    // Measure each scene's rendered box WHILE STILL LIVE — a scene root sized
-    // only by `position:absolute; inset:0` resolves to 0x0 once cloned into
-    // the staging canvas's layout subtree (no containing-block dimensions
-    // there), and the transition textures blank out (wild report: explicit
-    // 1080x1920 anchors fixed both transitions). The live document already
-    // resolves inset:0 (and any authored explicit width/height) correctly
-    // against the real ancestor chain, so pinning the clone to THIS measured
-    // box fixes the collapse without ever overriding an author's own sizing.
-    fromRect = fromEl.getBoundingClientRect();
-    toRect = toEl.getBoundingClientRect();
-
     while (fromStaging.firstChild) fromStaging.removeChild(fromStaging.firstChild);
     while (toStaging.firstChild) toStaging.removeChild(toStaging.firstChild);
-    const fromClone = fromEl.cloneNode(true) as HTMLElement;
-    const toClone = toEl.cloneNode(true) as HTMLElement;
-    fromStaging.appendChild(fromClone);
-    toStaging.appendChild(toClone);
 
     // cloneNode copies the GSAP opacity-fade (opacity:0 / hidden data-start), and
     // Chrome won't paint hidden elements — drawElementImage then throws "No cached
     // paint record" and the shader degrades to a hard cut. The shader blends from
     // full-opacity textures via u_progress, so force the clones visible. Cf.
     // forceSceneVisibleInClone (html2canvas path).
-    for (const [clone, rect, live] of [
-      [fromClone, fromRect, fromEl],
-      [toClone, toRect, toEl],
+    const rects: DOMRect[] = [];
+    for (const [live, staging] of [
+      [fromEl, fromStaging],
+      [toEl, toStaging],
     ] as const) {
-      const pin = clonePinStyleFor(rect);
-      const liveStyle = getComputedStyle(live);
-      for (const property of CLONE_INHERITED_TEXT_PROPERTIES) {
-        clone.style.setProperty(property, liveStyle.getPropertyValue(property));
-      }
+      const clone = live.cloneNode(true) as HTMLElement;
       clone.style.opacity = "1";
       clone.style.visibility = "visible";
-      clone.style.position = "absolute";
-      clone.style.left = pin.left;
-      clone.style.top = pin.top;
-      clone.style.width = pin.width;
-      clone.style.height = pin.height;
       clone.querySelectorAll<HTMLElement>("[data-start]").forEach((el) => {
         el.style.opacity = "1";
         el.style.visibility = "visible";
       });
+      // The outermost copy is pinned to its live box: sized only by `inset:0`, it would
+      // otherwise collapse to 0x0 inside the staging canvas and blank the texture.
+      const { root, liveRoot } = stageWithAncestors(live, clone);
+      const rect = liveRoot.getBoundingClientRect();
+      const pin = clonePinStyleFor(rect);
+      root.style.position = "absolute";
+      root.style.left = pin.left;
+      root.style.top = pin.top;
+      root.style.width = pin.width;
+      root.style.height = pin.height;
+      staging.appendChild(root);
+      rects.push(rect);
     }
+    [fromRect, toRect] = rects;
 
     // Decode any data-URI images in clones so the browser has current
     // bitmaps before the micro-screenshot forces a paint pass.
@@ -369,29 +358,25 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
       [fromCtx, fromChild, fromRect],
       [toCtx, toChild, toRect],
     ] as const;
-    // The staging canvases sit behind the page, so a bitmap left on them shows through any
-    // transparent area of the composition after the transition; clear once uploaded or failed.
-    const clearStaging = (): void => {
-      for (const [ctx] of staged) ctx.clearRect(0, 0, width, height);
-    };
     try {
       for (const [ctx, child, rect] of staged) {
         ctx.fillStyle = options.bgColor;
         ctx.fillRect(0, 0, width, height);
-        // Each clone draws into its own live box, so a scene smaller than the frame keeps its layout.
         ctx.drawElementImage(child, rect.left, rect.top, rect.width, rect.height);
       }
+      uploadTextureSource(gl as WebGLRenderingContext, fromTex, fromStaging);
+      uploadTextureSource(gl as WebGLRenderingContext, toTex, toStaging);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.warn("[HyperShader] page-side compositor: drawElementImage failed:", err);
-      clearStaging();
+      console.warn("[HyperShader] page-side compositor: scene capture failed:", err);
+      glCanvas.style.display = "none";
       pWin.__hf_page_composite_pending = false;
       return false;
+    } finally {
+      // The staging canvases sit behind the page, so a bitmap left on them would show
+      // through any transparent area of the composition for the rest of the film.
+      for (const [ctx] of staged) ctx.clearRect(0, 0, width, height);
     }
-
-    uploadTextureSource(gl as WebGLRenderingContext, fromTex, fromStaging);
-    uploadTextureSource(gl as WebGLRenderingContext, toTex, toStaging);
-    clearStaging();
 
     try {
       renderShader(

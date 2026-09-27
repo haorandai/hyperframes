@@ -185,49 +185,66 @@ describe("page-side compositor seek", () => {
   });
 });
 
-// The transparent inset case: 640x360 composition, each scene inset 90px 160px, Arial on #main.
+// The transparent inset case: 640x360 #main holding scenes inset 90px 160px, as in the
+// page-side-shader-compositor-render-compat fixture with a transparent page.
 describe("page-side compositor scene copies", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  const INSET = { left: 160, top: 90, width: 320, height: 180 };
+  const BOX = {
+    main: { left: 0, top: 0, width: 640, height: 360 },
+    scene: { left: 160, top: 90, width: 320, height: 180 },
+  };
 
-  class FakeStyle {
-    values = new Map<string, string>();
-    setProperty(name: string, value: string) {
-      this.values.set(name, value);
-    }
-  }
-
-  class FakeScene {
-    style = new FakeStyle() as FakeStyle & Record<string, string>;
-    constructor(readonly id: string) {}
+  class FakeEl {
+    style: Record<string, string> = {};
+    children: FakeEl[] = [];
+    parentElement: FakeEl | null = null;
+    constructor(
+      readonly id: string,
+      readonly copyOf: FakeEl | null = null,
+    ) {}
     getAttribute() {
       return null;
     }
     getBoundingClientRect() {
-      return { ...INSET, right: INSET.left + INSET.width, bottom: INSET.top + INSET.height };
+      return this.id === "main" ? BOX.main : BOX.scene;
     }
-    cloneNode() {
-      return new FakeScene(`${this.id}-clone`);
+    cloneNode(deep: boolean) {
+      const copy = new FakeEl(`${this.id}-copy`, this);
+      if (deep) copy.children = this.children.map((c) => c.cloneNode(true));
+      return copy;
+    }
+    appendChild(child: FakeEl) {
+      this.children.push(child);
+      child.parentElement = this;
+      return child;
     }
     querySelectorAll() {
       return [];
     }
   }
 
-  function installTransparentInsetFilm() {
+  function installTransparentInsetFilm(opts: { failDraw?: boolean } = {}) {
     const calls: Array<{ canvas: number; op: string; args: unknown[] }> = [];
-    const gl = fakeWebGl();
-    let canvasCount = 0;
+    const gl = new Proxy(fakeWebGl(), {
+      get: (target, key) => {
+        if (key === "texImage2D") {
+          return (...args: unknown[]) => calls.push({ canvas: -1, op: "texImage2D", args });
+        }
+        return Reflect.get(target, key);
+      },
+    });
+    const canvases: Array<{ style: Record<string, string> }> = [];
     const createCanvas = () => {
-      const index = canvasCount++;
-      const children: FakeScene[] = [];
+      const index = canvases.length;
+      const children: FakeEl[] = [];
       const record =
         (op: string) =>
         (...args: unknown[]) => {
           calls.push({ canvas: index, op, args });
+          if (op === "drawElementImage" && opts.failDraw) throw new Error("No cached paint record");
         };
       const ctx = {
         fillStyle: "",
@@ -235,8 +252,8 @@ describe("page-side compositor scene copies", () => {
         clearRect: record("clearRect"),
         drawElementImage: record("drawElementImage"),
       };
-      return {
-        style: {},
+      const canvas = {
+        style: {} as Record<string, string>,
         width: 0,
         height: 0,
         layoutSubtree: true,
@@ -248,15 +265,19 @@ describe("page-side compositor scene copies", () => {
         get firstElementChild() {
           return children[0] ?? null;
         },
-        appendChild: (child: FakeScene) => children.push(child),
+        appendChild: (child: FakeEl) => children.push(child),
         removeChild: () => children.shift(),
         querySelectorAll: () => [],
         getContext: (type: string) => (type === "2d" ? ctx : gl),
       };
+      canvases.push(canvas);
+      return canvas;
     };
+    const body = new FakeEl("body");
+    const main = body.appendChild(new FakeEl("main"));
     const scenes = new Map([
-      ["scene-a", new FakeScene("scene-a")],
-      ["scene-b", new FakeScene("scene-b")],
+      ["scene-a", main.appendChild(new FakeEl("scene-a"))],
+      ["scene-b", main.appendChild(new FakeEl("scene-b"))],
     ]);
     let startPolling: (() => void) | undefined;
     const hf = { seek: vi.fn() };
@@ -269,15 +290,13 @@ describe("page-side compositor scene copies", () => {
       clearInterval: () => undefined,
     };
     vi.stubGlobal("window", win);
-    vi.stubGlobal("HTMLElement", FakeScene);
+    vi.stubGlobal("HTMLElement", FakeEl);
     vi.stubGlobal("document", {
       createElement: createCanvas,
       getElementById: (id: string) => scenes.get(id) ?? null,
-      body: { appendChild: () => undefined },
+      body,
+      documentElement: null,
     });
-    vi.stubGlobal("getComputedStyle", () => ({
-      getPropertyValue: (name: string) => (name === "font-family" ? "Arial, sans-serif" : ""),
-    }));
     installPageSideCompositor({
       scenes: ["scene-a", "scene-b"],
       transitions: [{ time: 0.75, duration: 0.85, shader: "glitch" }],
@@ -290,43 +309,59 @@ describe("page-side compositor scene copies", () => {
     startPolling?.();
     const composite = async (time: number) => {
       hf.seek(time);
-      const prepare = win.__hf_page_composite_prepare as () => Promise<boolean>;
-      const resolve = win.__hf_page_composite_resolve as () => boolean;
-      await prepare();
-      return resolve();
+      await (win.__hf_page_composite_prepare as () => Promise<boolean>)();
+      return (win.__hf_page_composite_resolve as () => boolean)();
     };
-    return { calls, composite };
+    const overlay = () =>
+      canvases.find((c) => c.style.cssText?.includes("2147483646")) as {
+        style: Record<string, string>;
+      };
+    return { calls, composite, overlay };
   }
 
-  it("draws each scene copy into its own live box, not the whole frame", async () => {
+  it("stages each scene copy inside a copy of its composition root, drawn at the root's box", async () => {
     const { calls, composite } = installTransparentInsetFilm();
     expect(await composite(1.2)).toBe(true);
     const draws = calls.filter((c) => c.op === "drawElementImage");
-    expect(draws.map((c) => c.args.slice(1))).toEqual([
-      [160, 90, 320, 180],
-      [160, 90, 320, 180],
-    ]);
+    expect(draws).toHaveLength(2);
+    for (const [index, sceneId] of [
+      [0, "scene-a"],
+      [1, "scene-b"],
+    ] as const) {
+      const root = draws[index]?.args[0] as FakeEl;
+      expect(root.copyOf?.id).toBe("main");
+      expect(root.children.map((c) => c.copyOf?.id)).toEqual([sceneId]);
+      // The scene copy keeps its own authored box; only the root copy is pinned.
+      expect(root.children[0]?.style.left).toBeUndefined();
+      expect(draws[index]?.args.slice(1)).toEqual([0, 0, 640, 360]);
+    }
   });
 
   it("clears both staging bitmaps after the textures are uploaded", async () => {
     const { calls, composite } = installTransparentInsetFilm();
     await composite(1.2);
+    const lastUpload = calls.map((c) => c.op).lastIndexOf("texImage2D");
     const staging = new Set(calls.filter((c) => c.op === "drawElementImage").map((c) => c.canvas));
     expect(staging.size).toBe(2);
     for (const canvas of staging) {
-      const ops = calls.filter((c) => c.canvas === canvas).map((c) => c.op);
-      expect(ops.at(-1)).toBe("clearRect");
+      const lastClear = Math.max(
+        ...calls.flatMap((c, n) => (c.canvas === canvas && c.op === "clearRect" ? [n] : [])),
+      );
+      expect(lastClear).toBeGreaterThan(lastUpload);
+      const drawn = calls.findIndex((c) => c.canvas === canvas && c.op === "drawElementImage");
+      const clearedBeforeUpload = calls.some(
+        (c, n) => c.canvas === canvas && c.op === "clearRect" && n > drawn && n < lastUpload,
+      );
+      expect(clearedBeforeUpload).toBe(false);
     }
   });
 
-  it("carries the live scene's inherited font onto each copy", async () => {
-    const { calls, composite } = installTransparentInsetFilm();
-    await composite(1.2);
-    const [fromCopy, toCopy] = calls
-      .filter((c) => c.op === "drawElementImage")
-      .map((c) => c.args[0] as FakeScene);
-    expect(fromCopy?.style.values.get("font-family")).toBe("Arial, sans-serif");
-    expect(toCopy?.style.values.get("font-family")).toBe("Arial, sans-serif");
+  it("clears the staging bitmaps and hides the overlay when a scene capture fails", async () => {
+    const { calls, composite, overlay } = installTransparentInsetFilm({ failDraw: true });
+    expect(await composite(1.2)).toBe(false);
+    const drawn = calls.find((c) => c.op === "drawElementImage")?.canvas;
+    expect(calls.some((c) => c.canvas === drawn && c.op === "clearRect")).toBe(true);
+    expect(overlay().style.display).toBe("none");
   });
 });
 
