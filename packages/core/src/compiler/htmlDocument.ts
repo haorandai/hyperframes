@@ -210,17 +210,31 @@ const RAW_TEXT_TAGS = ["script", "style", "title", "textarea"] as const;
 type DocumentTag = "<head" | "</head" | "<body" | "</body";
 const COMMENT_END = /--!?>/g;
 
-function findDocumentTag(html: string, tag: DocumentTag): number {
-  const lowered = lowerAscii(html);
+/** Each `<` that opens markup, skipping comments, raw text and tag bodies; linear in the input. */
+function* markupStarts(lowered: string): Generator<number> {
   const unclosedRawText = new Set<string>();
   let cursor = 0;
   while (cursor !== -1) {
     const open = lowered.indexOf("<", cursor);
-    if (open === -1) return -1;
-    if (isTagAt(lowered, open, tag)) return open;
+    if (open === -1) return;
+    yield open;
     cursor = skipMarkup(lowered, open, unclosedRawText);
   }
+}
+
+function findDocumentTag(html: string, tag: DocumentTag): number {
+  const lowered = lowerAscii(html);
+  for (const open of markupStarts(lowered)) {
+    if (isTagAt(lowered, open, tag)) return open;
+  }
   return -1;
+}
+
+/** Offsets of every `<name` start tag outside comments and raw text, in source order. */
+export function findStartTags(html: string, name: string): number[] {
+  const lowered = lowerAscii(html);
+  const token = `<${lowerAscii(name)}`;
+  return [...markupStarts(lowered)].filter((open) => isTagAt(lowered, open, token));
 }
 
 function isTagAt(lowered: string, at: number, token: string): boolean {

@@ -33,4 +33,15 @@ describe("lazyPreviewImages", () => {
     const html = `<!DOCTYPE html><html>${head}<body>${body}</body></html>`;
     expect(lazyPreviewImages(html)).toBe(html.replace("<img ", '<img loading="lazy" '));
   });
+
+  it("stays linear on unclosed comments and raw text", () => {
+    for (const unit of ["<!--", "<script>"]) {
+      const html = doc(
+        `<div data-start="5"><img src="a.png"></div>${unit.repeat(2_000_000 / unit.length)}`,
+      );
+      const started = performance.now();
+      lazyPreviewImages(html);
+      expect(performance.now() - started, unit).toBeLessThan(1000);
+    }
+  });
 });
