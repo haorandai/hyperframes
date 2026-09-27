@@ -48,6 +48,15 @@ export const GENERIC_FAMILIES: ReadonlySet<string> = new Set([
   "blinkmacsystemfont",
 ]);
 
+// Keywords valid as a whole font-family value; they name no font.
+const CSS_WIDE_KEYWORDS: ReadonlySet<string> = new Set([
+  "inherit",
+  "initial",
+  "unset",
+  "revert",
+  "revert-layer",
+]);
+
 /**
  * Parse a single `font-family` value (e.g. `"Inter", -apple-system,
  * sans-serif`) into a list of unquoted family names in declaration order.
@@ -96,7 +105,22 @@ export function parseFontFamilyValue(value: string): string[] {
     .filter((piece) => piece.length > 0);
 }
 
-function systemPrimaryReplacement(value: string, deterministicPrimary: string): string | null {
+function systemPrimaryReplacement(
+  value: string,
+  deterministicPrimary: string,
+  customProperties: ReadonlyMap<string, string>,
+): string | null {
+  const variable = primaryCssVariable(value);
+  if (variable) {
+    if (customProperties.get(variable.name) || variable.fallback === null) return null;
+    // Rewrite the fallback in place so a property defined at runtime still wins.
+    const fallback = systemPrimaryReplacement(
+      variable.fallback,
+      deterministicPrimary,
+      customProperties,
+    );
+    return fallback ? `var(${variable.name}, ${fallback})${variable.rest}` : null;
+  }
   const families = parseFontFamilyValue(value);
   if (families.length === 0) return null;
   if (!GENERIC_FAMILIES.has(normalizeFamilyName(families[0]!))) return null;
@@ -116,11 +140,13 @@ function isFontFaceDeclaration(decl: Declaration): boolean {
   return parent?.type === "atrule" && (parent as AtRule).name.toLowerCase() === "font-face";
 }
 
-function normalizeCssDeclarations(root: postcss.Root, deterministicPrimary: string): boolean {
+type PrimaryReplacer = (value: string) => string | null;
+
+function normalizeCssDeclarations(root: postcss.Root, replacePrimary: PrimaryReplacer): boolean {
   let changed = false;
   root.walkDecls((decl) => {
     if (decl.prop.startsWith("--")) {
-      const replacement = systemPrimaryReplacement(decl.value, deterministicPrimary);
+      const replacement = replacePrimary(decl.value);
       if (!replacement) return;
       decl.value = replacement;
       changed = true;
@@ -131,7 +157,7 @@ function normalizeCssDeclarations(root: postcss.Root, deterministicPrimary: stri
     if (isFontFaceDeclaration(decl)) {
       return;
     }
-    const replacement = systemPrimaryReplacement(decl.value, deterministicPrimary);
+    const replacement = replacePrimary(decl.value);
     if (!replacement) return;
     decl.value = replacement;
     changed = true;
@@ -140,20 +166,20 @@ function normalizeCssDeclarations(root: postcss.Root, deterministicPrimary: stri
   return changed;
 }
 
-function normalizeCssFontFamilyDeclarations(css: string, deterministicPrimary: string): string {
+function normalizeCssFontFamilyDeclarations(css: string, replacePrimary: PrimaryReplacer): string {
   const root = parseCssRoot(css);
   if (!root) return css;
-  const changed = normalizeCssDeclarations(root, deterministicPrimary);
+  const changed = normalizeCssDeclarations(root, replacePrimary);
   return changed ? root.toString() : css;
 }
 
-function normalizeInlineStyleAttribute(style: string, deterministicPrimary: string): string {
+function normalizeInlineStyleAttribute(style: string, replacePrimary: PrimaryReplacer): string {
   const root = parseCssRoot(`*{${style}}`);
   if (!root) return style;
   const rule = root.first;
   if (rule?.type !== "rule") return style;
   const before = rule.toString();
-  normalizeCssDeclarations(root, deterministicPrimary);
+  normalizeCssDeclarations(root, replacePrimary);
   if (rule.toString() === before) return style;
   const serialized = ((rule as Rule).nodes ?? []).map((node) => node.toString()).join("; ");
   return serialized.endsWith(";") ? serialized : `${serialized};`;
@@ -171,11 +197,14 @@ export function normalizeSystemFontPrimaryFamilies(
   deterministicPrimary = "Inter",
 ): string {
   const { document } = parseHTML(html);
+  const customProperties = collectFontFamilyCustomProperties(html);
+  const replacePrimary: PrimaryReplacer = (value) =>
+    systemPrimaryReplacement(value, deterministicPrimary, customProperties);
   let changed = false;
 
   for (const styleEl of Array.from(document.querySelectorAll("style"))) {
     const current = styleEl.textContent ?? "";
-    const next = normalizeCssFontFamilyDeclarations(current, deterministicPrimary);
+    const next = normalizeCssFontFamilyDeclarations(current, replacePrimary);
     if (next === current) continue;
     styleEl.textContent = next;
     changed = true;
@@ -183,7 +212,7 @@ export function normalizeSystemFontPrimaryFamilies(
 
   for (const el of Array.from(document.querySelectorAll("[style]"))) {
     const current = el.getAttribute("style") ?? "";
-    const next = normalizeInlineStyleAttribute(current, deterministicPrimary);
+    const next = normalizeInlineStyleAttribute(current, replacePrimary);
     if (next === current) continue;
     el.setAttribute("style", next);
     changed = true;
@@ -191,7 +220,7 @@ export function normalizeSystemFontPrimaryFamilies(
 
   for (const el of Array.from(document.querySelectorAll("[data-font-family]"))) {
     const current = el.getAttribute("data-font-family") ?? "";
-    const next = systemPrimaryReplacement(current, deterministicPrimary);
+    const next = replacePrimary(current);
     if (!next) continue;
     el.setAttribute("data-font-family", next);
     changed = true;
@@ -269,7 +298,9 @@ export function collectFontFamilyCustomProperties(html: string): Map<string, str
   return customProperties;
 }
 
-function primaryCssVariableName(value: string): string | null {
+function primaryCssVariable(
+  value: string,
+): { name: string; fallback: string | null; rest: string } | null {
   const trimmed = value.trim();
   if (!trimmed.toLowerCase().startsWith("var(")) return null;
 
@@ -284,27 +315,55 @@ function primaryCssVariableName(value: string): string | null {
     depth -= 1;
     if (depth !== 0) continue;
 
-    const varExpression = trimmed.slice(0, index + 1);
-    const inner = varExpression.slice(4, -1).trim();
+    const inner = trimmed.slice(4, index).trim();
     const commaIndex = inner.indexOf(",");
-    const variableName = (commaIndex === -1 ? inner : inner.slice(0, commaIndex)).trim();
-    return /^--[A-Za-z0-9_-]+$/.test(variableName) ? variableName : null;
+    const name = (commaIndex === -1 ? inner : inner.slice(0, commaIndex)).trim();
+    if (!/^--[A-Za-z0-9_-]+$/.test(name)) return null;
+    return {
+      name,
+      fallback: commaIndex === -1 ? null : inner.slice(commaIndex + 1),
+      rest: trimmed.slice(index + 1),
+    };
   }
 
   return null;
+}
+
+/** `fallbackOnly`: named only inside the fallback of an undefined var(). */
+type ResolvedFamily = { family: string; fallbackOnly: boolean };
+
+// Deep enough for real alias chains; stops `--a: var(--b); --b: var(--a)` cycles.
+const MAX_CSS_VARIABLE_DEPTH = 8;
+
+function resolveDeclaredFamilies(
+  declaration: string,
+  customProperties: ReadonlyMap<string, string>,
+  fallbackOnly = false,
+  depth = 0,
+): ResolvedFamily[] {
+  const tag = (families: string[]) => families.map((family) => ({ family, fallbackOnly }));
+  const families = parseFontFamilyValue(declaration);
+  const variable = depth < MAX_CSS_VARIABLE_DEPTH ? primaryCssVariable(declaration) : null;
+  if (!variable) return tag(families);
+
+  const resolved = customProperties.get(variable.name);
+  let primary: ResolvedFamily[];
+  if (resolved) {
+    primary = resolveDeclaredFamilies(resolved, customProperties, fallbackOnly, depth + 1);
+  } else if (variable.fallback !== null) {
+    // An undefined property uses the var() fallback, as the browser does.
+    primary = resolveDeclaredFamilies(variable.fallback, customProperties, true, depth + 1);
+  } else {
+    return tag(families);
+  }
+  return [...primary, ...tag(families.slice(1))];
 }
 
 export function resolveFontFamilyDeclarationFamilies(
   declaration: string,
   customProperties: ReadonlyMap<string, string>,
 ): string[] {
-  const families = parseFontFamilyValue(declaration);
-  const variableName = primaryCssVariableName(declaration);
-  if (!variableName) return families;
-
-  const resolved = customProperties.get(variableName);
-  if (!resolved) return families;
-  return [...parseFontFamilyValue(resolved), ...families.slice(1)];
+  return resolveDeclaredFamilies(declaration, customProperties).map(({ family }) => family);
 }
 
 /**
@@ -462,18 +521,23 @@ function extractExistingFontFaces(html: string): Set<string> {
   return families;
 }
 
-function extractRequestedFontFamilies(html: string): Map<string, string> {
-  const requested = new Map<string, string>();
+function isFetchableFamilyName(normalized: string): boolean {
+  if (!normalized || normalized.startsWith("var(")) return false;
+  return !GENERIC_FAMILIES.has(normalized) && !CSS_WIDE_KEYWORDS.has(normalized);
+}
+
+function extractRequestedFontFamilies(html: string): Map<string, ResolvedFamily> {
+  const requested = new Map<string, ResolvedFamily>();
   const customProperties = collectFontFamilyCustomProperties(html);
   for (const { declaration } of iterateFontFamilyDeclarations(html)) {
-    for (const originalCase of resolveFontFamilyDeclarationFamilies(
-      declaration,
-      customProperties,
-    )) {
-      const normalized = originalCase.toLowerCase();
-      if (!normalized || GENERIC_FAMILIES.has(normalized)) continue;
-      if (normalized.startsWith("var(")) continue;
-      if (!requested.has(normalized)) requested.set(normalized, originalCase);
+    for (const { family, fallbackOnly } of resolveDeclaredFamilies(declaration, customProperties)) {
+      const normalized = family.toLowerCase();
+      if (!isFetchableFamilyName(normalized)) continue;
+      const seen = requested.get(normalized);
+      requested.set(normalized, {
+        family: seen?.family ?? family,
+        fallbackOnly: (seen?.fallbackOnly ?? true) && fallbackOnly,
+      });
     }
   }
   return requested;
@@ -598,7 +662,7 @@ function partitionWeightRuns(
 }
 
 async function buildFontFaceCss(
-  requestedFamilies: Map<string, string>,
+  requestedFamilies: Map<string, ResolvedFamily>,
   options: InternalFontFetchOptions,
   fontText?: string,
 ): Promise<{
@@ -608,7 +672,7 @@ async function buildFontFaceCss(
   const rules: string[] = [];
   const unresolved: string[] = [];
 
-  for (const [normalizedFamily, originalCaseFamily] of requestedFamilies) {
+  for (const [normalizedFamily, { family: originalCaseFamily }] of requestedFamilies) {
     // Path 1: pre-bundled fonts via FONT_ALIASES — emit embedded faces,
     // then fetch from Google Fonts to fill missing weights and character subsets.
     const canonicalKey = FONT_ALIASES[normalizedFamily];
@@ -1478,11 +1542,11 @@ export async function injectDeterministicFontFaces(
 
   const existingFaces = extractExistingFontFaces(html);
   const requestedFamilies = extractRequestedFontFamilies(html);
-  const pendingFamilies = new Map<string, string>();
+  const pendingFamilies = new Map<string, ResolvedFamily>();
 
-  for (const [normalizedFamily, originalCaseFamily] of requestedFamilies) {
+  for (const [normalizedFamily, requested] of requestedFamilies) {
     if (!existingFaces.has(normalizedFamily)) {
-      pendingFamilies.set(normalizedFamily, originalCaseFamily);
+      pendingFamilies.set(normalizedFamily, requested);
     }
   }
 
@@ -1495,11 +1559,15 @@ export async function injectDeterministicFontFaces(
     fetchOptions,
     extractGoogleFontsText(html),
   );
-  if (unresolved.length > 0 && options.failClosedFontFetch) {
+  // A fallback-only family that no source serves is tolerated; fetch failures threw above.
+  const required = unresolved.filter(
+    (family) => !pendingFamilies.get(family.toLowerCase())?.fallbackOnly,
+  );
+  if (required.length > 0 && options.failClosedFontFetch) {
     throw new FontFetchError(
-      unresolved.join(", "),
+      required.join(", "),
       "",
-      `[Compiler] Unresolved fonts in fail-closed mode: ${unresolved.join(", ")}. ` +
+      `[Compiler] Unresolved fonts in fail-closed mode: ${required.join(", ")}. ` +
         `Distributed renders require all fonts to be resolvable.`,
     );
   }
