@@ -4,8 +4,8 @@
 
   concept: a tablet-style pointer. A soft translucent dot glides across an editor toolbar;
   near a button it is pulled in and morphs into that button's rounded hover plate while the
-  icon leans toward the finger. It visits buttons in turn, presses one (the plate squashes,
-  the icon dips and turns accent), and leaves as a dot.
+  icon leans toward the finger and the plate swells slightly. It visits buttons in turn,
+  presses one (the plate squashes, the icon dips and turns accent), and leaves as a dot.
 
   mount contract: loaded by a host through data-composition-src; only <template> is cloned.
   #root fills the host clip (inset:0) and centres its own toolbar. See demo.html.
@@ -16,17 +16,17 @@
     visits (string)         comma-separated button indexes 0-5 the pointer visits, in order
     press (number 1-3)      which visit presses its button
 
-  envelope (default 5s): enter 0-0.8s, then per visit a 0.55s glide, a morph, a hold
-  (longer on the pressed visit), a release; exit in the last 0.6s. Beats compress to fit.
+  envelope (default 3.6s): enter 0-0.53s, then per visit a 0.48s glide, a morph, a hold
+  (the press lands 0.23s after arrival), a release; exit in the last 0.64s. Beats scale to fit.
 -->
 <html
   lang="en"
   data-composition-id="magnetic-cursor"
-  data-composition-duration="5"
+  data-composition-duration="3.6"
   data-composition-variables='[
     { "id": "accent", "type": "color", "role": "style", "label": "Accent", "default": "#3b82f6" },
     { "id": "tone", "type": "enum", "role": "style", "label": "Tone", "default": "light", "options": [ { "value": "light", "label": "Light toolbar" }, { "value": "dark", "label": "Dark toolbar" } ] },
-    { "id": "visits", "type": "string", "role": "content", "label": "Buttons visited", "description": "Comma-separated indexes 0-5: bold, italic, underline, link, list, image.", "default": "0,3,5" },
+    { "id": "visits", "type": "string", "role": "content", "label": "Buttons visited", "description": "Comma-separated indexes 0-5: bold, italic, underline, link, list, image.", "default": "0,3" },
     { "id": "press", "type": "number", "role": "timing", "label": "Pressed visit", "default": 2, "min": 1, "max": 3, "step": 1 }
   ]'
 >
@@ -106,7 +106,7 @@
         }
       </style>
 
-      <div id="root" data-composition-id="magnetic-cursor" data-duration="5" data-tone="light">
+      <div id="root" data-composition-id="magnetic-cursor" data-duration="3.6" data-tone="light">
         <svg class="mc-layer" id="mc-layer" aria-hidden="true">
           <rect id="mc-plate" x="0" y="0" width="0" height="0" rx="0" />
         </svg>
@@ -184,14 +184,14 @@
           var duration = Math.max(
             0.001,
             parseFloat(
-              root.dataset.duration || html.getAttribute("data-composition-duration") || "5",
+              root.dataset.duration || html.getAttribute("data-composition-duration") || "3.6",
             ),
           );
           var tone = vars.tone === "dark" ? "dark" : "light";
           var accent = String(vars.accent || "#3b82f6");
           root.setAttribute("data-tone", tone);
 
-          var visits = String(vars.visits || "0,3,5")
+          var visits = String(vars.visits || "0,3")
             .split(",")
             .map(function (s) {
               return Math.round(Number(s));
@@ -200,7 +200,7 @@
               return isFinite(n) && n >= 0 && n < buttons.length;
             })
             .slice(0, 3);
-          if (visits.length === 0) visits = [0, 3, 5];
+          if (visits.length === 0) visits = [0, 3];
           var pressVisit =
             Math.max(1, Math.min(visits.length, Math.round(Number(vars.press) || 2))) - 1;
 
@@ -222,12 +222,15 @@
           var DOT = BW * 0.5;
           var PLATE_R = BW * 0.26;
           var PULL_RADIUS = BW * 1.1;
+          // iPadOS parallax: about 3pt of icon travel on a 44pt button.
+          var ICON_SHIFT = (BW * 3) / 44;
 
-          // Beat plan at the default 5s; any other duration scales every beat evenly.
-          var ENTER = 0.8;
-          var GLIDE = 0.55;
-          var HOLD = 0.5;
-          var PRESS_HOLD = 0.35;
+          // Beat plan (3.4s), stretched evenly to the duration: 3.6s by default.
+          var ENTER = 0.5;
+          var GLIDE = 0.45;
+          var HOLD = 0.45;
+          var PRESS_AT = 0.22;
+          var PRESS_HOLD = 0.59;
           var RELEASE = 0.18;
           var EXIT = 0.6;
           var plan = [];
@@ -239,7 +242,7 @@
               index: index,
               arrive: t,
               leave: t + hold,
-              press: k === pressVisit ? t + 0.28 : -1,
+              press: k === pressVisit ? t + PRESS_AT : -1,
             });
             t += hold + RELEASE;
           });
@@ -361,8 +364,9 @@
               squash = pressOf(active, time);
               cx = mix(finger.x, b.x + (finger.x - b.x) * 0.05, smooth(m));
               cy = mix(finger.y, b.y + (finger.y - b.y) * 0.05, smooth(m));
-              w = mix(DOT, b.w, ms) * (1 - 0.06 * squash);
-              h = mix(DOT, b.h, ms) * (1 - 0.1 * squash);
+              var lift = 1 + 0.04 * smooth(m);
+              w = mix(DOT, b.w, ms) * lift * (1 - 0.06 * squash);
+              h = mix(DOT, b.h, ms) * lift * (1 - 0.1 * squash);
               r = mix(DOT / 2, PLATE_R, smooth(m));
             }
             var alpha = mix(0.55, tone === "dark" ? 0.14 : 0.09, smooth(m)) + 0.08 * squash;
@@ -376,9 +380,12 @@
 
             icons.forEach(function (icon, i) {
               var lean = active && active.index === i ? smooth(m) : 0;
-              var bx = boxes[i];
-              var dx = (finger.x - bx.x) * 0.12 * lean;
-              var dy = (finger.y - bx.y) * 0.12 * lean;
+              var vx = finger.x - boxes[i].x;
+              var vy = finger.y - boxes[i].y;
+              // Full shift once the finger is 0.3 button widths off centre.
+              var shift = (ICON_SHIFT * lean) / Math.max(Math.hypot(vx, vy), BW * 0.3);
+              var dx = vx * shift;
+              var dy = vy * shift;
               var dip = active && active.index === i ? squash : 0;
               icon.style.transform =
                 "translate(" +

@@ -15,7 +15,7 @@
   "jobs": ["demonstrate"],
   "family": "pointers",
   "profile": "interaction",
-  "syncPoints": [{ "id": "press", "phase": "hold", "offset": 2.37 }],
+  "syncPoints": [{ "id": "press", "phase": "hold", "offset": 1.91 }],
   "variables": [
     { "id": "accent", "type": "color", "role": "style", "label": "Accent", "default": "#3b82f6" },
     {
@@ -35,7 +35,7 @@
       "role": "content",
       "label": "Buttons visited",
       "description": "Comma-separated indexes 0-5: bold, italic, underline, link, list, image.",
-      "default": "0,3,5"
+      "default": "0,3"
     },
     {
       "id": "press",
