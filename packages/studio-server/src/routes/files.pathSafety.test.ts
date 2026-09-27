@@ -364,22 +364,33 @@ describe("resolveProjectPath why", () => {
   });
 
   it.each([
-    ["an error", () => new Error("read failed")],
-    ["the missing-folder error", () => new ProjectRootMissingError("gone")],
-  ])("drops a failed route's own headers from the 404 when it throws %s", async (_, error) => {
-    const { project, adapter } = fixture();
-    const api = createStudioApi(adapter);
-    api.get("/projects/:id/cached", (c) => {
-      c.header("ETag", '"thumb"');
-      throw error();
-    });
-    rmSync(project, { recursive: true, force: true });
+    ["an error after the folder vanished", () => new Error("read failed"), true],
+    ["the missing-folder error", () => new ProjectRootMissingError("gone"), false],
+  ])(
+    "keeps the host's headers but not the route's on the 404 when a route throws %s",
+    async (_, error, removeFolder) => {
+      const { project, adapter } = fixture();
+      const api = createStudioApi(adapter);
+      api.get("/projects/:id/cached", (c) => {
+        c.header("ETag", '"thumb"');
+        throw error();
+      });
+      const host = new Hono();
+      host.use(async (c, next) => {
+        c.header("Access-Control-Allow-Origin", "*");
+        await next();
+      });
+      host.route("/api", api);
+      if (removeFolder) rmSync(project, { recursive: true, force: true });
 
-    const response = await api.request("http://localhost/projects/demo/cached");
+      const response = await host.request("http://localhost/api/projects/demo/cached");
 
-    expect(response.headers.get("ETag")).toBeNull();
-    await expectProjectGone(response, project);
-  });
+      expect(response.status).toBe(404);
+      expect(await response.json()).toMatchObject({ why: "project_dir_missing" });
+      expect(response.headers.get("ETag")).toBeNull();
+      expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    },
+  );
 
   it("reports a missing project directory as 404, not 403", async () => {
     const { app, project } = fixture();
