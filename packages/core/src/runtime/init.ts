@@ -60,9 +60,11 @@ import {
 } from "../sceneParts";
 import {
   applyPositionEdits,
+  EDIT_ORIGINAL_TRANSLATE_ATTR,
   forgetPositionEdit,
   installPositionEditsSeekReapply,
 } from "./positionEdits";
+import { unproxiedSrc } from "./proxySrc";
 import { applyVariableBindings, unproxiedMediaSrc } from "./applyVariableBindings";
 import { createColorGradingRuntime, type RuntimeColorGradingApi } from "./colorGrading";
 import { COLOR_GRADING_AUTHORED_OPACITY_ATTR } from "../colorGrading";
@@ -235,6 +237,24 @@ const authoredShape = (el: Element): string =>
     Array.from(el.attributes, (a) => [a.name, a.value]).filter(
       ([name]) => name !== COLOR_GRADING_AUTHORED_OPACITY_ATTR,
     ),
+    el.innerHTML,
+  ]);
+
+// What the runtime writes on a video or audio: style (reset on a kept one), preload, the opacity stamp and a moved
+// element's original translate. A proxied src is compared as written; a variable-bound one is the binding's.
+const RUNTIME_MEDIA_ATTRS = new Set([
+  "style",
+  "preload",
+  "src",
+  COLOR_GRADING_AUTHORED_OPACITY_ATTR,
+  EDIT_ORIGINAL_TRANSLATE_ATTR,
+]);
+const writtenShape = (el: Element): string =>
+  JSON.stringify([
+    Array.from(el.attributes, (a) => [a.name, a.value]).filter(
+      ([name]) => !RUNTIME_MEDIA_ATTRS.has(name!),
+    ),
+    el.hasAttribute("data-var-src") ? null : unproxiedSrc(el),
     el.innerHTML,
   ]);
 
@@ -3183,7 +3203,8 @@ export function initSandboxRuntimeModular(): void {
     for (const el of host.querySelectorAll("video, audio")) {
       const shape = authoredShape(el);
       const kept = byShape.get(shape)?.shift();
-      if (!kept) {
+      // Anything a script wrote on it, under the old markup or not, is not in a fresh load's copy.
+      if (!kept || writtenShape(kept) !== writtenShape(el)) {
         authoredMedia.set(el, shape);
         continue;
       }
@@ -3195,10 +3216,8 @@ export function initSandboxRuntimeModular(): void {
       else kept.setAttribute("style", style);
       // The swap's closing pass puts its move back, as a load's first pass does.
       forgetPositionEdit(kept as HTMLElement);
-      // What a script can set on it, as written or as the runtime sets it; the volume probe below redoes volume.
+      // Properties no attribute shows, as the runtime sets them; the volume probe below redoes volume.
       const media = kept as HTMLMediaElement;
-      for (const name of ["loop", "muted", "controls", "autoplay", "playsinline"])
-        media.toggleAttribute(name, el.hasAttribute(name));
       media.muted = state.bridgeMuted || state.mediaOutputMuted || media.defaultMuted;
       media.defaultPlaybackRate = 1;
       media.playbackRate = state.playbackRate;

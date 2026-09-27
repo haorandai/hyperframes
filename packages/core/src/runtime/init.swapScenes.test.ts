@@ -576,16 +576,17 @@ describe("__hfSwapScenes", () => {
     `{ const scene = document.querySelector('[data-hf-scene="a"]:not(style):not(script)');` +
     `const video = scene.querySelector('video');` +
     `if (scene.querySelector('p').textContent === 'A one') ${write}; }`;
-  const bootWithHeadingScript = (write: string) => {
+  const bootWithHeadingScript = (write: string, video = '<video src="clip.mp4"></video>') => {
     const scene = (text: string, hash: string): Scene => ({
       ...A1,
       hash,
-      body: `<p>${text}</p><video src="clip.mp4"></video>`,
+      body: `<p>${text}</p>${video}`,
       script: writesOnlyOverTheFirstHeading(write),
     });
     boot([scene("A one", "ha1"), B], trackingRoot().root);
+    const fresh = sceneHost("a").querySelector("video")!.outerHTML;
     new Function(document.querySelector('script[data-hf-scene="a"]')!.textContent!)();
-    return preview([scene("A two", "ha2"), B]).html;
+    return { html: preview([scene("A two", "ha2"), B]).html, fresh };
   };
 
   it.each([
@@ -593,13 +594,12 @@ describe("__hfSwapScenes", () => {
     ["volume", "video.volume = 0.2", 1],
     ["playbackRate", "video.playbackRate = 2", 1],
     ["defaultPlaybackRate", "video.defaultPlaybackRate = 2", 1],
-    ["loop", "video.loop = true", false],
     ["preservesPitch", "video.preservesPitch = false", true],
   ] as const)(
     "gives a kept video the %s a fresh load gives it when its unchanged script wrote it only over the old text",
     async (property, write, fresh) => {
       quietMedia();
-      const html = bootWithHeadingScript(write);
+      const { html } = bootWithHeadingScript(write);
       await tick();
       const video = sceneHost("a").querySelector("video")!;
       expect(video[property]).not.toBe(fresh);
@@ -609,9 +609,64 @@ describe("__hfSwapScenes", () => {
     },
   );
 
+  it.each([
+    "video.className = 'dim'",
+    "video.hidden = true",
+    "video.dataset.volume = '0.1'",
+    "video.setAttribute('data-playback-rate', '2')",
+    "video.poster = 'p.png'",
+    "video.loop = true",
+    "video.append(document.createElement('track'))",
+  ])(
+    "rebuilds a video as a fresh load has it when its unchanged script ran `%s` only over the old text",
+    async (write) => {
+      quietMedia();
+      const { html, fresh } = bootWithHeadingScript(write);
+      await tick();
+      const video = sceneHost("a").querySelector("video")!;
+      expect(video.outerHTML).not.toBe(fresh);
+      await window.__hfSwapScenes!(html);
+      const rebuilt = sceneHost("a").querySelector("video")!;
+      expect(rebuilt).not.toBe(video);
+      expect(rebuilt.outerHTML).toBe(fresh);
+    },
+  );
+
+  it("keeps a video through a text edit when its unchanged script writes nothing to it", async () => {
+    quietMedia();
+    const { html } = bootWithHeadingScript("void video");
+    await tick();
+    const video = sceneHost("a").querySelector("video")!;
+    await window.__hfSwapScenes!(html);
+    expect(sceneHost("a").querySelector("video")).toBe(video);
+  });
+
+  it.each([
+    ["preload", '<video src="clip.mp4" preload="metadata"></video>', () => {}],
+    ["a proxied src", '<video src="clip.mov"></video>', () => void proxyHostile()],
+    [
+      "a variable-bound src",
+      '<video data-var-src="clip" src="placeholder.mp4"></video>',
+      () => {
+        scoped.__hfVariablesByComp = { a: { clip: "clip.mp4" } };
+      },
+    ],
+    ["the opacity stamp", '<video src="clip.mp4"></video>', () => {}, "data-hf-authored-opacity"],
+  ])("keeps a video on which the runtime wrote %s", async (_, video, arrange, stamp?: string) => {
+    quietMedia();
+    arrange();
+    const { html } = bootWithHeadingScript("void video", video);
+    await tick();
+    const kept = sceneHost("a").querySelector("video")!;
+    if (stamp) kept.setAttribute(stamp, "");
+    expect(kept.outerHTML).not.toBe(video);
+    await window.__hfSwapScenes!(html);
+    expect(sceneHost("a").querySelector("video")).toBe(kept);
+  });
+
   it("unmutes a kept video though stopping Web Audio puts back the mute it saved from the old script", async () => {
     quietMedia();
-    const html = bootWithHeadingScript("video.muted = true");
+    const { html } = bootWithHeadingScript("video.muted = true");
     await tick();
     const video = sceneHost("a").querySelector("video")!;
     // Web Audio captured the video while the old script had it muted, and restores that on its next stop.
@@ -623,15 +678,22 @@ describe("__hfSwapScenes", () => {
     expect(video.muted).toBe(false);
   });
 
-  it("rebuilds a video a script gave a stream, which a fresh load does not have", async () => {
-    quietMedia();
-    const html = bootWithHeadingScript("video.muted = true");
-    await tick();
-    const video = sceneHost("a").querySelector("video")!;
-    Object.defineProperty(video, "srcObject", { value: {} });
-    await window.__hfSwapScenes!(html);
-    expect(sceneHost("a").querySelector("video")).not.toBe(video);
-  });
+  it.each([
+    ["a stream", "srcObject", {}],
+    ["an output device", "sinkId", "speakers"],
+    ["a key session", "mediaKeys", {}],
+  ])(
+    "rebuilds a video a script gave %s, which a fresh load does not have",
+    async (_, key, value) => {
+      quietMedia();
+      const { html } = bootWithHeadingScript("void video");
+      await tick();
+      const video = sceneHost("a").querySelector("video")!;
+      Object.defineProperty(video, key, { value });
+      await window.__hfSwapScenes!(html);
+      expect(sceneHost("a").querySelector("video")).not.toBe(video);
+    },
+  );
 
   it.each([
     ["rewinds and kills an old timeline that cannot revert", false, "", 1],
@@ -962,7 +1024,8 @@ describe("__hfSwapScenes", () => {
       "a counter on a local object",
       "video",
       `const state = { n: 0 }; tl.to(state, { n: 10, duration: 1, onUpdate: () => void (k.dataset.n = String(Math.round(state.n))) }); tl.from(k, { x: 50, duration: 1 }, 0);`,
-      asFresh,
+      // The attribute its callback writes is not in the markup, so the video is rebuilt.
+      "swapped, as a fresh load",
     ],
     [
       "a move the record missed, as a callback's",
