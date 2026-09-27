@@ -296,7 +296,7 @@ describe("resolveProjectPath why", () => {
     expect(existsSync(project)).toBe(false);
   });
 
-  it("answers that the project folder is gone when it is renamed while an upload streams in", async () => {
+  it("answers that the project folder is gone when it is renamed while an upload is being read", async () => {
     const { project } = fixture();
     const api = createStudioApi({
       listProjects: () => [],
@@ -309,22 +309,16 @@ describe("resolveProjectPath why", () => {
     } as StudioApiAdapter);
     const form = new FormData();
     form.append("files", new File(["upload bytes"], "clip.txt"));
-    const encoded = new Response(form);
-    const bytes = new Uint8Array(await encoded.arrayBuffer());
-    const body = new ReadableStream<Uint8Array>({
-      pull(controller) {
-        renameSync(project, `${project}-renamed`);
-        controller.enqueue(bytes);
-        controller.close();
-      },
+    const readForm = Request.prototype.formData;
+    vi.spyOn(Request.prototype, "formData").mockImplementation(function (this: Request) {
+      renameSync(project, `${project}-renamed`);
+      return readForm.call(this);
     });
 
     const response = await api.request("http://localhost/projects/demo/upload", {
       method: "POST",
-      headers: { "Content-Type": encoded.headers.get("Content-Type")! },
-      body,
-      duplex: "half",
-    } as RequestInit);
+      body: form,
+    });
 
     expect(response.status).toBe(404);
     expect(await response.json()).toMatchObject({ why: "project_dir_missing" });
