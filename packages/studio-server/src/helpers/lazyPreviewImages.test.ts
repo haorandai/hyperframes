@@ -27,6 +27,22 @@ describe("lazyPreviewImages", () => {
     expect(lazyPreviewImages(html)).toBe(html);
   });
 
+  it("marks a later image after a comment, script or template that holds an image", () => {
+    const html = lazyPreviewImages(
+      doc(
+        '<!-- <img src="x.png"> --><script>el.innerHTML = "<img src=y.png>";</script>' +
+          '<template><img id="cloned" src="t.png"></template>' +
+          '<div data-start="5"><template><img src="u.png"></template><img id="later" src="b.png"></div>',
+      ),
+    );
+    expect(["cloned", "later"].map((id) => loadingOf(html, id))).toEqual([null, "lazy"]);
+  });
+
+  it("changes nothing when the scanner and the DOM disagree on the images", () => {
+    const html = doc('<xmp><img src="x.png"></xmp><div data-start="5"><img src="b.png"></div>');
+    expect(lazyPreviewImages(html)).toBe(html);
+  });
+
   it("leaves script text and fragments untouched", () => {
     const script = '<script>el.innerHTML = "<img src=x.png>";</script>';
     expect(lazyPreviewImages(doc(`${script}<div data-start="5"></div>`))).toContain(script);
@@ -47,8 +63,9 @@ describe("lazyPreviewImages", () => {
         `<div data-start="5"><img src="a.png"></div>${unit.repeat(2_000_000 / unit.length)}`,
       );
       const started = performance.now();
-      lazyPreviewImages(html);
+      const out = lazyPreviewImages(html);
       expect(performance.now() - started, unit).toBeLessThan(1000);
+      expect(out, unit).toBe(html.replace("<img ", '<img loading="lazy" '));
     }
   });
 });

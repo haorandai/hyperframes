@@ -229,10 +229,18 @@ function findDocumentTag(html: string, tag: DocumentTag): number {
   return -1;
 }
 
+// Template content is left out, as querySelectorAll leaves it out of the document.
 export function findStartTags(html: string, name: string): number[] {
   const lowered = lowerAscii(html);
   const token = `<${lowerAscii(name)}`;
-  return [...markupStarts(lowered)].filter((open) => isTagAt(lowered, open, token));
+  const starts: number[] = [];
+  let templateDepth = 0;
+  for (const open of markupStarts(lowered)) {
+    if (templateDepth === 0 && isTagAt(lowered, open, token)) starts.push(open);
+    if (isTagAt(lowered, open, "<template")) templateDepth++;
+    else if (templateDepth > 0 && isTagAt(lowered, open, "</template")) templateDepth--;
+  }
+  return starts;
 }
 
 function isTagAt(lowered: string, at: number, token: string): boolean {
