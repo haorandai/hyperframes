@@ -258,16 +258,19 @@ function previewVariablesFromRequest(rawVariables: string | undefined):
   return { raw: rawVariables, values: parse.values };
 }
 
+/** Captures screenshot right after a seek, so they get every image eager and no preview mark. */
+export const PREVIEW_CAPTURE_PARAM = "hf-capture";
+
 function injectStudioPreviewAugmentations(
   html: string,
   adapter: StudioApiAdapter,
   projectDir: string,
   activeCompositionPath: string,
+  capture: boolean,
 ): string {
-  const marked = injectTagsAtHeadStart(
-    lazyPreviewImages(html),
-    `<meta name="${STUDIO_PREVIEW_MARK_META}">`,
-  );
+  const marked = capture
+    ? html
+    : injectTagsAtHeadStart(lazyPreviewImages(html), `<meta name="${STUDIO_PREVIEW_MARK_META}">`);
   return injectStudioMotionScript(
     injectMotionPathPluginIfNeeded(
       injectGsapCdnFallback(
@@ -357,6 +360,7 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
     project: ResolvedProject,
     previewVariables: Record<string, unknown> | null,
     builtKey: string,
+    capture: boolean,
   ): Promise<string | null> {
     const diskMain = resolveProjectMainHtml(project.dir, project.id);
     const normalizedDisk = diskMain ? ensureHfIds(diskMain.html) : null;
@@ -395,6 +399,7 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
         adapter,
         project.dir,
         mainCompositionPath,
+        capture,
       );
       if (previewVariables) bundled = injectPreviewVariables(bundled, previewVariables);
       bundled = await injectMediaCodecMap(
@@ -419,6 +424,7 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
           adapter,
           project.dir,
           fallback.compositionPath,
+          capture,
         );
         if (previewVariables) {
           fallbackAugmented = injectPreviewVariables(fallbackAugmented, previewVariables);
@@ -447,8 +453,9 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
     const vars = previewVariablesFromRequest(c.req.query("variables"));
     if (vars.error !== undefined) return c.json({ error: vars.error }, 400);
     const previewVariables = vars.values;
+    const capture = c.req.query(PREVIEW_CAPTURE_PARAM) !== undefined;
 
-    const etag = `"preview:${signature}${variablesEtagSalt(vars.raw)}"`;
+    const etag = `"preview:${signature}${variablesEtagSalt(vars.raw)}${capture ? ":capture" : ""}"`;
     const ifNoneMatch = c.req.header("If-None-Match");
     if (ifNoneMatch === etag) {
       return new Response(null, {
@@ -464,7 +471,7 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
     }
     let pending = previewBuilds.get(builtKey);
     if (!pending) {
-      pending = buildPreview(project, previewVariables, builtKey).finally(() =>
+      pending = buildPreview(project, previewVariables, builtKey, capture).finally(() =>
         previewBuilds.delete(builtKey),
       );
       previewBuilds.set(builtKey, pending);
@@ -506,7 +513,8 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
     // a pre-pin cached response (preview-only ids, unstamped disk file) must
     // not revalidate to a 304 that skips the pin.
     const compPathHash = createHash("sha1").update(compPath).digest("hex");
-    const etag = `"comp:v2:${compPathHash}:${signature}${variablesEtagSalt(vars.raw)}"`;
+    const capture = c.req.query(PREVIEW_CAPTURE_PARAM) !== undefined;
+    const etag = `"comp:v2:${compPathHash}:${signature}${variablesEtagSalt(vars.raw)}${capture ? ":capture" : ""}"`;
     const ifNoneMatch = c.req.header("If-None-Match");
     if (ifNoneMatch === etag) {
       return new Response(null, {
@@ -528,7 +536,7 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
     );
     if (!html) return c.text("not found", 404);
     html = ensureHfIds(await transformPreviewHtml(html, adapter, project, compPath));
-    html = injectStudioPreviewAugmentations(html, adapter, project.dir, compPath);
+    html = injectStudioPreviewAugmentations(html, adapter, project.dir, compPath, capture);
     if (previewVariables) html = injectPreviewVariables(html, previewVariables);
     html = await injectMediaCodecMap(html, adapter, project.dir, compPath, mediaCodecProbeCache);
     return c.html(html, 200, previewCacheHeaders(etag));
