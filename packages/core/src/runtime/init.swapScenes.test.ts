@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { initSandboxRuntimeModular, installAuthoredMediaCapture } from "./init";
 import type { RuntimeTimelineLike } from "./types";
 import { resetRuntimeDataForTests } from "./runtimeData";
+import { WebAudioTransport } from "./webAudioTransport";
 import { probeAndCacheElementVolume } from "./mediaVolumeEnvelope.js";
 import { wrapScopedCompositionScript } from "../compiler/compositionScoping";
 
@@ -569,6 +570,67 @@ describe("__hfSwapScenes", () => {
     await window.__hfSwapScenes!(preview([scene("A two", "", "ha2"), B]).html);
     const video = sceneHost("a").querySelector("video")!;
     expect([video.style.opacity, video.muted]).toEqual(["", false]);
+  });
+
+  const writesOnlyOverTheFirstHeading = (write: string) =>
+    `{ const scene = document.querySelector('[data-hf-scene="a"]:not(style):not(script)');` +
+    `const video = scene.querySelector('video');` +
+    `if (scene.querySelector('p').textContent === 'A one') ${write}; }`;
+  const bootWithHeadingScript = (write: string) => {
+    const scene = (text: string, hash: string): Scene => ({
+      ...A1,
+      hash,
+      body: `<p>${text}</p><video src="clip.mp4"></video>`,
+      script: writesOnlyOverTheFirstHeading(write),
+    });
+    boot([scene("A one", "ha1"), B], trackingRoot().root);
+    new Function(document.querySelector('script[data-hf-scene="a"]')!.textContent!)();
+    return preview([scene("A two", "ha2"), B]).html;
+  };
+
+  it.each([
+    ["muted", "video.muted = true", false],
+    ["volume", "video.volume = 0.2", 1],
+    ["playbackRate", "video.playbackRate = 2", 1],
+    ["defaultPlaybackRate", "video.defaultPlaybackRate = 2", 1],
+    ["loop", "video.loop = true", false],
+    ["preservesPitch", "video.preservesPitch = false", true],
+  ] as const)(
+    "gives a kept video the %s a fresh load gives it when its unchanged script wrote it only over the old text",
+    async (property, write, fresh) => {
+      quietMedia();
+      const html = bootWithHeadingScript(write);
+      await tick();
+      const video = sceneHost("a").querySelector("video")!;
+      expect(video[property]).not.toBe(fresh);
+      await window.__hfSwapScenes!(html);
+      expect(sceneHost("a").querySelector("video")).toBe(video);
+      expect(video[property]).toBe(fresh);
+    },
+  );
+
+  it("unmutes a kept video though stopping Web Audio puts back the mute it saved from the old script", async () => {
+    quietMedia();
+    const html = bootWithHeadingScript("video.muted = true");
+    await tick();
+    const video = sceneHost("a").querySelector("video")!;
+    // Web Audio captured the video while the old script had it muted, and restores that on its next stop.
+    vi.spyOn(WebAudioTransport.prototype, "stopAll").mockImplementationOnce(() => {
+      video.muted = true;
+    });
+    await window.__hfSwapScenes!(html);
+    expect(sceneHost("a").querySelector("video")).toBe(video);
+    expect(video.muted).toBe(false);
+  });
+
+  it("rebuilds a video a script gave a stream, which a fresh load does not have", async () => {
+    quietMedia();
+    const html = bootWithHeadingScript("video.muted = true");
+    await tick();
+    const video = sceneHost("a").querySelector("video")!;
+    Object.defineProperty(video, "srcObject", { value: {} });
+    await window.__hfSwapScenes!(html);
+    expect(sceneHost("a").querySelector("video")).not.toBe(video);
   });
 
   it.each([

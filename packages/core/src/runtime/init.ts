@@ -3175,6 +3175,9 @@ export function initSandboxRuntimeModular(): void {
       const shape = authoredMedia.get(el);
       // Its grading canvas sits beside it in the old scene and cannot follow it.
       if (!shape || colorGradingRuntime?.isGraded(el)) continue;
+      // A stream, output device or key session a script gave it is not in the markup.
+      const { srcObject, sinkId, mediaKeys } = el as HTMLMediaElement;
+      if (srcObject || sinkId || mediaKeys) continue;
       byShape.set(shape, [...(byShape.get(shape) ?? []), el]);
     }
     for (const el of host.querySelectorAll("video, audio")) {
@@ -3192,6 +3195,14 @@ export function initSandboxRuntimeModular(): void {
       else kept.setAttribute("style", style);
       // The swap's closing pass puts its move back, as a load's first pass does.
       forgetPositionEdit(kept as HTMLElement);
+      // What a script can set on it, as written or as the runtime sets it; the volume probe below redoes volume.
+      const media = kept as HTMLMediaElement;
+      for (const name of ["loop", "muted", "controls", "autoplay", "playsinline"])
+        media.toggleAttribute(name, el.hasAttribute(name));
+      media.muted = state.bridgeMuted || state.mediaOutputMuted || media.defaultMuted;
+      media.defaultPlaybackRate = 1;
+      media.playbackRate = state.playbackRate;
+      media.preservesPitch = true;
     }
   };
   const compositionIdsIn = (host: Element) =>
@@ -3381,6 +3392,9 @@ export function initSandboxRuntimeModular(): void {
       delete timelines()[id];
       delete sceneAnimations()[id];
     }
+    // Released before kept media is reset: a later stop puts back the mute and volume it saved under the old script.
+    webAudio.stopAll();
+    clock.detachAudioSource();
     for (const { oldParts, newParts, oldHost, newHost } of swaps) {
       // Each new style takes its own old one's place: same-named @keyframes resolve by order.
       const newStyles = newParts.filter((el) => el.tagName === "STYLE");
