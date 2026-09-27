@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "bun:test";
 import { buildGifPalettegenArgs, buildGifPaletteuseArgs } from "./gifEncodeArgs.js";
 
-const ffmpeg = (args: string[]) => spawnSync("ffmpeg", ["-v", "error", ...args]);
+const ffmpeg = (args: string[]) => spawnSync("ffmpeg", args);
 
 describe("GIF encode of RGB frames among RGBA frames", () => {
   it("encodes every frame without rebuilding the filter graph", () => {
@@ -35,7 +35,7 @@ describe("GIF encode of RGB frames among RGBA frames", () => {
       expect(ffmpeg(buildGifPalettegenArgs(args)).status).toBe(0);
       // Without the fix the crash is a race that most, not all, runs lose.
       for (let run = 0; run < 5; run++) {
-        const encode = spawnSync("ffmpeg", ["-v", "info", ...buildGifPaletteuseArgs(args)]);
+        const encode = ffmpeg(buildGifPaletteuseArgs(args));
         expect(encode.stderr.toString()).not.toContain("Reconfiguring filter graph");
         expect(encode.status).toBe(0);
       }

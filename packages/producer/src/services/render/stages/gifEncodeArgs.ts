@@ -15,14 +15,13 @@ function fpsToFfmpegArg(fps: Fps): string {
   return fps.den === 1 ? String(fps.num) : `${fps.num}/${fps.den}`;
 }
 
-// Fully opaque frames can arrive as RGB PNGs among RGBA ones. The format change would
-// rebuild the filter graph, which paletteuse cannot survive (ffmpeg fails the encode).
+const KEEP_FILTER_GRAPH_WHEN_FRAMES_DROP_ALPHA = ["-reinit_filter", "0"];
+
 function framesInput(input: GifEncodeArgsInput, fpsArg: string): string[] {
   return [
     "-framerate",
     fpsArg,
-    "-reinit_filter",
-    "0",
+    ...KEEP_FILTER_GRAPH_WHEN_FRAMES_DROP_ALPHA,
     "-i",
     join(input.framesDir, input.framePattern),
   ];
