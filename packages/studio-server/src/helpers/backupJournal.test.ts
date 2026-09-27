@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ProjectRootMissingError } from "@hyperframes/core";
 import { backupPathForResponse, snapshotBeforeWrite } from "./backupJournal";
 
 const tempDirs: string[] = [];
@@ -98,15 +99,12 @@ describe("snapshotBeforeWrite when the project folder is gone", () => {
     const file = join(projectDir, "index.html");
     writeFileSync(file, "before");
     vi.resetModules();
-    vi.doMock("./safePath.js", async () => {
-      const actual = await vi.importActual<typeof import("./safePath.js")>("./safePath.js");
-      return {
-        ...actual,
-        mkdirWithinProject: (root: string) => {
-          throw new actual.ProjectRootMissingError(root);
-        },
-      };
-    });
+    vi.doMock("./safePath.js", async () => ({
+      ...(await vi.importActual<typeof import("./safePath.js")>("./safePath.js")),
+      mkdirWithinProject: (root: string) => {
+        throw new ProjectRootMissingError(root);
+      },
+    }));
     const { snapshotBeforeWrite: snapshot } = await import("./backupJournal");
 
     expect(() => snapshot(projectDir, file)).toThrow(/Project folder not found/);

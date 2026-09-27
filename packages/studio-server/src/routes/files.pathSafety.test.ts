@@ -44,7 +44,7 @@ function fixture() {
   };
   const app = new Hono();
   registerFileRoutes(app, adapter);
-  return { app, project, outside };
+  return { app, project, outside, adapter };
 }
 
 function linkOrSkip(context: TestContext, target: string, link: string, type: "file" | "dir") {
@@ -73,6 +73,12 @@ function upload(app: Hono, dir = "", filename = "upload.txt") {
     method: "POST",
     body: form,
   });
+}
+
+async function expectProjectGone(response: Response, project: string) {
+  expect(response.status).toBe(404);
+  expect(await response.json()).toMatchObject({ why: "project_dir_missing" });
+  expect(existsSync(project)).toBe(false);
 }
 
 describe("file route containment", () => {
@@ -254,20 +260,15 @@ describe("resolveProjectPath why", () => {
   // path-traversal attempt. This must be a 404 with its own `why`, checked
   // BEFORE the NUL/traversal checks so it wins when both are true.
   it("does not recreate a project folder renamed away while Studio has it open", async () => {
-    const { project } = fixture();
+    const { project, adapter } = fixture();
     const api = createStudioApi({
-      listProjects: () => [],
-      resolveProject: async (id) => ({ id, dir: project }),
-      bundle: async () => null,
-      lint: async () => ({ findings: [] }),
-      runtimeUrl: "/api/runtime.js",
+      ...adapter,
       rendersDir: () => join(project, "renders"),
-      startRender: () => ({ id: "job", status: "rendering", progress: 0, outputPath: "out.mp4" }),
       installRegistryBlock: async () => {
         mkdirWithinProject(project, join(project, "compositions"));
         return { written: [] };
       },
-    } as StudioApiAdapter);
+    });
     const render = () =>
       api.request("http://localhost/projects/demo/render", { method: "POST", body: "{}" });
     renameSync(project, `${project}-renamed`);
@@ -297,32 +298,14 @@ describe("resolveProjectPath why", () => {
   });
 
   it("answers that the project folder is gone when it is renamed while an upload is being read", async () => {
-    const { project } = fixture();
-    const api = createStudioApi({
-      listProjects: () => [],
-      resolveProject: async (id) => ({ id, dir: project }),
-      bundle: async () => null,
-      lint: async () => ({ findings: [] }),
-      runtimeUrl: "/api/runtime.js",
-      rendersDir: () => join(project, "renders"),
-      startRender: () => ({ id: "job", status: "rendering", progress: 0, outputPath: "out.mp4" }),
-    } as StudioApiAdapter);
-    const form = new FormData();
-    form.append("files", new File(["upload bytes"], "clip.txt"));
+    const { project, adapter } = fixture();
     const readForm = Request.prototype.formData;
     vi.spyOn(Request.prototype, "formData").mockImplementation(function (this: Request) {
       renameSync(project, `${project}-renamed`);
       return readForm.call(this);
     });
 
-    const response = await api.request("http://localhost/projects/demo/upload", {
-      method: "POST",
-      body: form,
-    });
-
-    expect(response.status).toBe(404);
-    expect(await response.json()).toMatchObject({ why: "project_dir_missing" });
-    expect(existsSync(project)).toBe(false);
+    await expectProjectGone(await upload(createStudioApi(adapter)), project);
   });
 
   it("reports a missing project directory as 404, not 403", async () => {
@@ -504,9 +487,6 @@ describe("upload collision races", () => {
   it("answers that the project folder is gone when it is renamed while a file is read", async () => {
     const { app, project } = fixture();
     raceDuringRead("upload.txt", () => renameSync(project, `${project}-renamed`));
-    const response = await upload(app);
-    expect(response.status).toBe(404);
-    expect(await response.json()).toMatchObject({ why: "project_dir_missing" });
-    expect(existsSync(project)).toBe(false);
+    await expectProjectGone(await upload(app), project);
   });
 });

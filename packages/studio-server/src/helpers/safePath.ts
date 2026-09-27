@@ -9,7 +9,6 @@ export {
   isProjectRootMissing,
   isSafePath,
   mkdirWithinProject,
-  ProjectRootMissingError,
   realpath,
   realProjectRoot,
   resolveWithinProject,
