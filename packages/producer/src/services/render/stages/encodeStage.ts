@@ -50,7 +50,11 @@ import {
   type EngineConfig,
   type EncodeResult,
 } from "@hyperframes/engine";
-import { clearGifFramesBeforeNext, type Fps } from "@hyperframes/core";
+import {
+  clearGifFramesBeforeNext,
+  gifHasTranslucentFrameAfterOpaque,
+  type Fps,
+} from "@hyperframes/core";
 import type { ProducerLogger } from "../../../logger.js";
 import { formatExportFrameName } from "../../../utils/paths.js";
 import type { ProgressCallback, RenderJob } from "../../renderOrchestrator.js";
@@ -140,6 +144,43 @@ function resolveGifLoop(loop: number | undefined): number {
   return resolved;
 }
 
+function gifEncodeFailure(
+  startTime: number,
+  outputPath: string,
+  error: string,
+  failureReason?: EncodeResult["failureReason"],
+): EncodeResult {
+  return {
+    success: false,
+    outputPath,
+    durationMs: Date.now() - startTime,
+    framesEncoded: 0,
+    fileSize: 0,
+    error,
+    failureReason,
+  };
+}
+
+/** Re-encodes with whole frames and clears each one, so no opaque frame shows through later. */
+async function clearOpaqueFramesBeforeTranslucent(
+  argsInput: GifEncodeArgsInput,
+  run: { signal?: AbortSignal; timeout: number },
+): Promise<{ error: string; failureReason?: EncodeResult["failureReason"] } | null> {
+  const result = await runFfmpeg(buildGifPaletteuseArgs(argsInput, true), run);
+  if (!result.success) {
+    return {
+      error: formatFfmpegError(result.exitCode, result.stderr),
+      failureReason: result.failureReason,
+    };
+  }
+  const gif = readFileSync(argsInput.outputPath);
+  if (!clearGifFramesBeforeNext(gif)) {
+    return { error: "[FFmpeg] GIF output could not be parsed to clear its frames" };
+  }
+  writeFileSync(argsInput.outputPath, gif);
+  return null;
+}
+
 async function encodeGifFromDir(
   framesDir: string,
   framePattern: string,
@@ -177,50 +218,19 @@ async function encodeGifFromDir(
     preserveAlpha: input.preserveAlpha,
   };
   try {
-    const paletteResult = await runFfmpeg(buildGifPalettegenArgs(argsInput), {
-      signal: input.signal,
-      timeout: input.timeout,
-    });
-    if (!paletteResult.success) {
-      return {
-        success: false,
-        outputPath,
-        durationMs: Date.now() - startTime,
-        framesEncoded: 0,
-        fileSize: 0,
-        error: formatFfmpegError(paletteResult.exitCode, paletteResult.stderr),
-        failureReason: paletteResult.failureReason,
-      };
-    }
-
-    const gifResult = await runFfmpeg(buildGifPaletteuseArgs(argsInput), {
-      signal: input.signal,
-      timeout: input.timeout,
-    });
-    if (!gifResult.success) {
-      return {
-        success: false,
-        outputPath,
-        durationMs: Date.now() - startTime,
-        framesEncoded: 0,
-        fileSize: 0,
-        error: formatFfmpegError(gifResult.exitCode, gifResult.stderr),
-        failureReason: gifResult.failureReason,
-      };
-    }
-    if (input.preserveAlpha) {
-      const gif = readFileSync(outputPath);
-      if (!clearGifFramesBeforeNext(gif)) {
-        return {
-          success: false,
-          outputPath,
-          durationMs: Date.now() - startTime,
-          framesEncoded: 0,
-          fileSize: 0,
-          error: "[FFmpeg] GIF output could not be parsed to clear its frames",
-        };
+    const run = { signal: input.signal, timeout: input.timeout };
+    for (const args of [buildGifPalettegenArgs(argsInput), buildGifPaletteuseArgs(argsInput)]) {
+      const result = await runFfmpeg(args, run);
+      if (!result.success) {
+        const error = formatFfmpegError(result.exitCode, result.stderr);
+        return gifEncodeFailure(startTime, outputPath, error, result.failureReason);
       }
-      writeFileSync(outputPath, gif);
+    }
+    if (input.preserveAlpha && gifHasTranslucentFrameAfterOpaque(readFileSync(outputPath))) {
+      const failure = await clearOpaqueFramesBeforeTranslucent(argsInput, run);
+      if (failure) {
+        return gifEncodeFailure(startTime, outputPath, failure.error, failure.failureReason);
+      }
     }
 
     const fileSize = existsSync(outputPath) ? statSync(outputPath).size : 0;

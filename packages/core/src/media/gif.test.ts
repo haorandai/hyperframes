@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { clearGifFramesBeforeNext, parseAnimatedGifMetadata } from "./gif";
+import {
+  clearGifFramesBeforeNext,
+  gifHasTranslucentFrameAfterOpaque,
+  parseAnimatedGifMetadata,
+} from "./gif";
 
 function u16(value: number): number[] {
   return [value & 0xff, (value >> 8) & 0xff];
@@ -91,21 +95,54 @@ describe("parseAnimatedGifMetadata", () => {
   });
 });
 
+// A frame whose graphic control block has the given disposal and optional transparent index,
+// optionally carrying its own two-entry colour table.
+function controlledFrame(
+  disposal: number,
+  transparentIndex?: number,
+  localTable = false,
+): number[] {
+  const bytes = frame(10);
+  bytes[3] = (disposal << 2) | (transparentIndex === undefined ? 0 : 1);
+  bytes[6] = transparentIndex ?? 0;
+  if (localTable) {
+    bytes[17] = 0b1000_0000;
+    bytes.splice(18, 0, 0, 0, 0, 255, 255, 255);
+  }
+  return bytes;
+}
+
+function controls(bytes: Uint8Array): number[][] {
+  return [...bytes.keys()]
+    .filter((i) => bytes[i] === 0x21 && bytes[i + 1] === 0xf9 && bytes[i + 2] === 0x04)
+    .map((i) => [bytes[i + 3]!, bytes[i + 6]!]);
+}
+
+describe("gifHasTranslucentFrameAfterOpaque", () => {
+  it("is true only when a frame left in place is followed by one cleared to background", () => {
+    const opaque = controlledFrame(1);
+    const translucent = controlledFrame(2, 1);
+    expect(gifHasTranslucentFrameAfterOpaque(gif([...opaque, ...translucent]))).toBe(true);
+    expect(gifHasTranslucentFrameAfterOpaque(gif([...translucent, ...opaque]))).toBe(false);
+    expect(gifHasTranslucentFrameAfterOpaque(gif([...opaque, ...opaque]))).toBe(false);
+    expect(gifHasTranslucentFrameAfterOpaque(gif([...translucent, ...translucent]))).toBe(false);
+  });
+});
+
 describe("clearGifFramesBeforeNext", () => {
-  it("clears every frame to the GIF's transparent index before the next one", () => {
-    const transparentFrame = frame(10);
-    transparentFrame[3] = 0b0000_0101; // leave in place, transparent index present
-    transparentFrame[6] = 7;
-    const bytes = gif([...frame(10), ...transparentFrame]);
+  it("clears every frame and names the shared table's transparent index where missing", () => {
+    const bytes = gif([
+      ...controlledFrame(2, 1, true), // own table: its index means nothing in the shared one
+      ...controlledFrame(1),
+      ...controlledFrame(2, 0),
+    ]);
 
     expect(clearGifFramesBeforeNext(bytes)).toBe(true);
 
-    const controls = [...bytes.keys()].filter(
-      (i) => bytes[i] === 0x21 && bytes[i + 1] === 0xf9 && bytes[i + 2] === 0x04,
-    );
-    expect(controls.map((i) => [bytes[i + 3], bytes[i + 6]])).toEqual([
-      [0b0000_1001, 7],
-      [0b0000_1001, 7],
+    expect(controls(bytes)).toEqual([
+      [0b0000_1001, 1],
+      [0b0000_1001, 0],
+      [0b0000_1001, 0],
     ]);
   });
 

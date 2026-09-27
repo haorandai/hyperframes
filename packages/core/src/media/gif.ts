@@ -76,9 +76,15 @@ function parseApplicationExtension(
   return null;
 }
 
+export interface GifFrameLayout {
+  /** Offset of the graphic control block's packed byte, or null when the frame has none. */
+  controlOffset: number | null;
+  localColorTable: boolean;
+}
+
 export function parseAnimatedGifMetadata(
   bytes: Uint8Array,
-  onGraphicControl?: (packedFieldOffset: number) => void,
+  onFrame?: (frame: GifFrameLayout) => void,
 ): AnimatedGifMetadata | null {
   if (bytes.length < 13) return null;
   const signature = readAscii(bytes, 0, 6);
@@ -95,6 +101,7 @@ export function parseAnimatedGifMetadata(
   }
 
   let frameCount = 0;
+  let controlOffset: number | null = null;
   const delaysCentiseconds: number[] = [];
   let loopCount: number | null = null;
 
@@ -116,7 +123,7 @@ export function parseAnimatedGifMetadata(
         const delay = readU16LE(bytes, pos + 2);
         if (delay == null) return null;
         delaysCentiseconds.push(normalizeDelayCentiseconds(delay));
-        onGraphicControl?.(pos + 1);
+        controlOffset = pos + 1;
         pos += 1 + blockSize;
         if (bytes[pos] !== 0) return null;
         pos += 1;
@@ -140,6 +147,8 @@ export function parseAnimatedGifMetadata(
     if (introducer === 0x2c) {
       if (pos + 9 > bytes.length) return null;
       const imagePacked = bytes[pos + 8] ?? 0;
+      onFrame?.({ controlOffset, localColorTable: (imagePacked & 0b1000_0000) !== 0 });
+      controlOffset = null;
       pos += 9;
       if ((imagePacked & 0b1000_0000) !== 0) {
         pos += colorTableByteLength(imagePacked);
@@ -169,24 +178,49 @@ export function parseAnimatedGifMetadata(
   };
 }
 
-const DISPOSE_TO_BACKGROUND = 2 << 2;
 const DISPOSAL_BITS = 0b0001_1100;
+const LEAVE_IN_PLACE = 1 << 2;
+const DISPOSE_TO_BACKGROUND = 2 << 2;
 const HAS_TRANSPARENT_INDEX = 0b0000_0001;
 const TRANSPARENT_INDEX_AFTER_PACKED = 3;
 
+function frameLayouts(bytes: Uint8Array): GifFrameLayout[] | null {
+  const frames: GifFrameLayout[] = [];
+  return parseAnimatedGifMetadata(bytes, (frame) => frames.push(frame)) === null ? null : frames;
+}
+
+function disposalOf(bytes: Uint8Array, frame: GifFrameLayout): number | null {
+  return frame.controlOffset === null ? null : (bytes[frame.controlOffset] ?? 0) & DISPOSAL_BITS;
+}
+
+export function gifHasTranslucentFrameAfterOpaque(bytes: Uint8Array): boolean {
+  let sawOpaque = false;
+  for (const frame of frameLayouts(bytes) ?? []) {
+    const disposal = disposalOf(bytes, frame);
+    if (disposal === LEAVE_IN_PLACE) sawOpaque = true;
+    else if (disposal === DISPOSE_TO_BACKGROUND && sawOpaque) return true;
+  }
+  return false;
+}
+
 export function clearGifFramesBeforeNext(bytes: Uint8Array): boolean {
-  const packedOffsets: number[] = [];
-  if (parseAnimatedGifMetadata(bytes, (at) => packedOffsets.push(at)) === null) return false;
-  const withTransparency = packedOffsets.find(
-    (at) => ((bytes[at] ?? 0) & HAS_TRANSPARENT_INDEX) !== 0,
+  const frames = frameLayouts(bytes);
+  if (frames === null) return false;
+  const controls = frames.flatMap((f) => (f.controlOffset === null ? [] : [f.controlOffset]));
+  const shared = frames.flatMap((f) =>
+    f.controlOffset === null || f.localColorTable ? [] : [f.controlOffset],
   );
-  for (const at of packedOffsets) {
+  const hasIndex = (at: number) => ((bytes[at] ?? 0) & HAS_TRANSPARENT_INDEX) !== 0;
+  const source = shared.find(hasIndex);
+  for (const at of controls) {
     bytes[at] = ((bytes[at] ?? 0) & ~DISPOSAL_BITS) | DISPOSE_TO_BACKGROUND;
-    if (withTransparency !== undefined && ((bytes[at] ?? 0) & HAS_TRANSPARENT_INDEX) === 0) {
-      bytes[at] = (bytes[at] ?? 0) | HAS_TRANSPARENT_INDEX;
-      bytes[at + TRANSPARENT_INDEX_AFTER_PACKED] =
-        bytes[withTransparency + TRANSPARENT_INDEX_AFTER_PACKED] ?? 0;
-    }
+  }
+  if (source === undefined) return true;
+  for (const at of shared) {
+    if (hasIndex(at)) continue;
+    bytes[at] = (bytes[at] ?? 0) | HAS_TRANSPARENT_INDEX;
+    bytes[at + TRANSPARENT_INDEX_AFTER_PACKED] =
+      bytes[source + TRANSPARENT_INDEX_AFTER_PACKED] ?? 0;
   }
   return true;
 }

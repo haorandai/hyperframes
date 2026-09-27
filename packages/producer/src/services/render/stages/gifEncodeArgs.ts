@@ -40,7 +40,7 @@ export function buildGifPalettegenArgs(input: GifEncodeArgsInput): string[] {
   ];
 }
 
-export function buildGifPaletteuseArgs(input: GifEncodeArgsInput): string[] {
+export function buildGifPaletteuseArgs(input: GifEncodeArgsInput, wholeFrames = false): string[] {
   const fpsArg = fpsToFfmpegArg(input.fps);
   const transparency = input.preserveAlpha ? ":alpha_threshold=128" : "";
   return [
@@ -52,7 +52,7 @@ export function buildGifPaletteuseArgs(input: GifEncodeArgsInput): string[] {
     `fps=${fpsArg} [x]; [x][1:v] paletteuse=dither=sierra2_4a${transparency}`,
     "-loop",
     String(input.loop),
-    ...(input.preserveAlpha ? WRITE_EVERY_FRAME_WHOLE : []),
+    ...(wholeFrames ? WRITE_EVERY_FRAME_WHOLE : []),
     input.outputPath,
   ];
 }

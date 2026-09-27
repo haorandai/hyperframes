@@ -406,17 +406,8 @@ describe("runEncodeStage config plumbing", () => {
     );
   });
 
-  it("encodes alpha GIFs from PNG frames with explicit transparency filters", async () => {
+  async function encodeAlphaGif(paths: { framesDir: string; root: string }, outputPath: string) {
     const { runEncodeStage } = await import("./encodeStage.js");
-    const paths = createFramesDir("png");
-    // One 1x1 frame whose graphic control block says "leave in place" (disposal 1).
-    const oneFrameGif = Buffer.from(
-      "47494638396101000100800000000000ffffff21f90405000000002c00000000010001000002024401003b",
-      "hex",
-    );
-    const outputPath = join(paths.root, "out.gif");
-    writeFileSync(outputPath, oneFrameGif);
-
     await runEncodeStage(
       makeInput({
         framesDir: paths.framesDir,
@@ -427,6 +418,19 @@ describe("runEncodeStage config plumbing", () => {
         captureImageFormat: "png",
       }),
     );
+  }
+
+  it("encodes alpha GIFs from PNG frames with explicit transparency filters", async () => {
+    const paths = createFramesDir("png");
+    // One 1x1 frame whose graphic control block says "leave in place" (disposal 1).
+    const oneFrameGif = Buffer.from(
+      "47494638396101000100800000000000ffffff21f90405000000002c00000000010001000002024401003b",
+      "hex",
+    );
+    const outputPath = join(paths.root, "out.gif");
+    writeFileSync(outputPath, oneFrameGif);
+
+    await encodeAlphaGif(paths, outputPath);
 
     expect(runFfmpegMock).toHaveBeenCalledTimes(2);
     expect(runFfmpegMock.mock.calls[0]?.[0]).toContain(join(paths.framesDir, "frame_%06d.png"));
@@ -437,9 +441,31 @@ describe("runEncodeStage config plumbing", () => {
     expect(runFfmpegMock.mock.calls[1]?.[0]).toContain(
       "fps=30 [x]; [x][1:v] paletteuse=dither=sierra2_4a:alpha_threshold=128",
     );
-    expect(runFfmpegMock.mock.calls[1]?.[0]).toContain("-gifflags");
-    const packed = readFileSync(outputPath)[oneFrameGif.indexOf(Buffer.from("21f904", "hex")) + 3]!;
-    expect((packed >> 2) & 0b111).toBe(2);
+    // No frame turns translucent after an opaque one, so the encode is today's, untouched.
+    expect(readFileSync(outputPath).equals(oneFrameGif)).toBe(true);
+  });
+
+  it("re-encodes whole frames and clears them when a translucent frame follows an opaque one", async () => {
+    const paths = createFramesDir("png");
+    const image = "2c0000000001000100000202440100";
+    // Frame 1 is left in place (opaque); frame 2 clears to background with transparent index 0.
+    const staleProne = Buffer.from(
+      `47494638396101000100800000000000ffffff21f9040400000000${image}21f9040900000000${image}3b`,
+      "hex",
+    );
+    const outputPath = join(paths.root, "out.gif");
+    writeFileSync(outputPath, staleProne);
+
+    await encodeAlphaGif(paths, outputPath);
+
+    expect(runFfmpegMock).toHaveBeenCalledTimes(3);
+    expect(runFfmpegMock.mock.calls[1]?.[0]).not.toContain("-gifflags");
+    expect(runFfmpegMock.mock.calls[2]?.[0]).toContain("-gifflags");
+    const out = readFileSync(outputPath);
+    const packed = [...out.keys()]
+      .filter((i) => out[i] === 0x21 && out[i + 1] === 0xf9 && out[i + 2] === 0x04)
+      .map((i) => out[i + 3]);
+    expect(packed).toEqual([0b0000_1001, 0b0000_1001]);
   });
 
   it("keeps opaque GIF encoding on JPEG frames without alpha-only filters", async () => {
