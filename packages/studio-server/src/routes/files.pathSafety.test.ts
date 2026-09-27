@@ -308,6 +308,21 @@ describe("resolveProjectPath why", () => {
     await expectProjectGone(await upload(createStudioApi(adapter)), project);
   });
 
+  it("does not start a render into an outside folder once the project folder is gone", async () => {
+    const { project, adapter } = fixture();
+    const startRender = vi.fn(adapter.startRender);
+    const api = createStudioApi({ ...adapter, startRender });
+    rmSync(project, { recursive: true, force: true });
+
+    const response = await api.request("http://localhost/projects/demo/render", {
+      method: "POST",
+      body: "{}",
+    });
+
+    await expectProjectGone(response, project);
+    expect(startRender).not.toHaveBeenCalled();
+  });
+
   it("reports a missing project directory as 404, not 403", async () => {
     const { app, project } = fixture();
     rmSync(project, { recursive: true, force: true });
