@@ -823,6 +823,23 @@ describe("detectRenderModeHints", () => {
     ).rejects.toThrow(/compositions\/intro\.html[\s\S]*compositions\/outro\.html/);
   });
 
+  it("compileForRender aborts naming a data-composition-src that points at a folder", async () => {
+    const projectDir = makeSubCompProject(
+      "hf-folder-subcomp-",
+      [{ id: "intro", src: "compositions/intro" }],
+      {},
+    );
+    mkdirSync(join(projectDir, "compositions", "intro"));
+    writeFileSync(
+      join(projectDir, "compositions", "intro", "index.html"),
+      validSubCompHtml("intro", "Intro"),
+    );
+
+    await expect(
+      compileForRender(projectDir, join(projectDir, "index.html"), projectDir),
+    ).rejects.toThrow(/compositions\/intro[\s\S]*a folder, not an HTML file/);
+  });
+
   it("compileForRender aborts when a data-composition-src reference points at a missing file", async () => {
     const projectDir = makeSubCompProject(
       "hf-missing-subcomp-",

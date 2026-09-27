@@ -11,7 +11,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { createReadStream, existsSync, mkdirSync, readFileSync } from "fs";
+import { createReadStream, existsSync, mkdirSync, readFileSync, statSync } from "fs";
 import { join, dirname, resolve, basename, relative } from "path";
 import { parseHTML } from "linkedom";
 import {
@@ -115,6 +115,8 @@ export interface CompiledComposition {
 
 const INFERRED_MEDIA_DURATION_ATTR = "data-hf-inferred-duration";
 
+const isRegularFile = (path: string) => statSync(path, { throwIfNoEntry: false })?.isFile() ?? false;
+
 /** Adapts linkedom's `parseHTML` to the `checkSubCompositionUsability` contract. */
 function parseSubCompHtmlForValidity(html: string): ParsableDocumentLike {
   return parseHTML(html).document as unknown as ParsableDocumentLike;
@@ -208,6 +210,10 @@ function assertSubCompositionsUsable(
 
     if (!existsSync(filePath)) {
       problems.push({ srcPath, detail: "the file does not exist" });
+      continue;
+    }
+    if (!isRegularFile(filePath)) {
+      problems.push({ srcPath, detail: "it is a folder, not an HTML file" });
       continue;
     }
 
@@ -705,7 +711,7 @@ async function parseSubCompositions(
       continue;
     }
 
-    if (!existsSync(filePath)) {
+    if (!isRegularFile(filePath)) {
       continue;
     }
 
