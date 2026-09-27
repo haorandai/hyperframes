@@ -392,7 +392,6 @@ describe("resolveProjectPath why", () => {
     },
   );
 
-
   it("does not start a render into an outside folder once the project folder is gone", async () => {
     const { project, adapter } = fixture();
     const startRender = vi.fn(adapter.startRender);
