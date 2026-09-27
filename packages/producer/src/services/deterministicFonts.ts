@@ -1288,11 +1288,13 @@ async function fetchGoogleFont(
   const googleFamilyName = familyName.replace(/\+/g, " ");
   const encodedFamily = encodeURIComponent(googleFamilyName);
   const textParam = fontText ? `&text=${encodeURIComponent(fontText)}` : "";
-  // The page's own Google stylesheet already names this family. Download that
-  // URL. Replacing it with the weight-only URL drops axes the link asked for,
-  // and the embedded face is written after the link, so the wider file wins.
-  // A failed download stays failed instead of fetching a different file.
-  const authoredStylesheet = options.authoredStylesheets.get(normalizeFamilyName(googleFamilyName));
+  // Bundled families need the full supplement, including italics a page's
+  // link may omit. Other families need the authored URL to preserve axes
+  // such as optical size instead of replacing them with a weight-only face.
+  const normalizedFamily = normalizeFamilyName(googleFamilyName);
+  const authoredStylesheet = FONT_ALIASES[normalizedFamily]
+    ? undefined
+    : options.authoredStylesheets.get(normalizedFamily);
   // `text=` asks Google for only the characters on the page. A CJK family
   // without it is a hundred files, and the compile's font budget is 20s.
   const url = authoredStylesheet

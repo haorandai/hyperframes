@@ -407,8 +407,8 @@ describe("authored Google font stylesheet", () => {
   });
 
   it("does not append page text when the character set does not fit on the font URL", async () => {
-    const href = "https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400";
-    const file = "https://fonts.gstatic.com/s/notosansjp/full.woff2";
+    const href = "https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400";
+    const file = "https://fonts.gstatic.com/s/notoserifjp/full.woff2";
     const many = Array.from({ length: 600 }, (_, i) => String.fromCodePoint(0x4e00 + i)).join("");
     const urls: string[] = [];
     const fetchImpl = (async (input: unknown) => {
@@ -416,7 +416,7 @@ describe("authored Google font stylesheet", () => {
       urls.push(url);
       if (url === href) {
         return new Response(
-          `@font-face { font-family: 'Noto Sans JP'; font-style: normal; font-weight: 400; src: url(${file}) format('woff2'); unicode-range: U+3000-30FF; }`,
+          `@font-face { font-family: 'Noto Serif JP'; font-style: normal; font-weight: 400; src: url(${file}) format('woff2'); unicode-range: U+3000-30FF; }`,
           { status: 200 },
         );
       }
@@ -426,7 +426,7 @@ describe("authored Google font stylesheet", () => {
 
     const { injectDeterministicFontFaces } = await import("./deterministicFonts.js");
     await injectDeterministicFontFaces(
-      `<!doctype html><html><head><link rel="stylesheet" href="${href}"><style>p { font-family: "Noto Sans JP", sans-serif; }</style></head><body>${many}</body></html>`,
+      `<!doctype html><html><head><link rel="stylesheet" href="${href}"><style>p { font-family: "Noto Serif JP", serif; }</style></head><body>${many}</body></html>`,
       { fetchImpl, allowSystemFontCapture: false },
     );
 
