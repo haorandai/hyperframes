@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname, relative, resolve, sep } from "node:path";
 import { parseHTML } from "linkedom";
@@ -46,6 +46,9 @@ function canonicalProjectPath(projectDir: string, candidate: string | null): str
   const canonical = realpath(candidate);
   if (!isSafePath(realpath(projectDir), canonical)) {
     throw new CompositionInsertionError("Composition source escapes the project", 400);
+  }
+  if (!statSync(canonical).isFile()) {
+    throw new CompositionInsertionError("Composition source is a folder, not an HTML file", 400);
   }
   return canonical;
 }

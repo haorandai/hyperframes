@@ -1,6 +1,6 @@
 import { defineCommand } from "citty";
 import type { Example } from "./_examples.js";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 
 export const examples: Example[] = [
@@ -64,7 +64,7 @@ export function parseCompositions(html: string, baseDir: string): CompositionInf
     // If this references an external sub-composition, parse that file
     if (compositionSrc) {
       const subPath = resolve(baseDir, compositionSrc);
-      if (existsSync(subPath)) {
+      if (statSync(subPath, { throwIfNoEntry: false })?.isFile()) {
         const subHtml = readFileSync(subPath, "utf-8");
         const subInfo = parseSubComposition(subHtml, id, width, height);
         compositions.push({ ...subInfo, source: compositionSrc });

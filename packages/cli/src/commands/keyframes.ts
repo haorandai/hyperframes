@@ -573,7 +573,7 @@ function groupTraces(tweens: SurfacedTween[]): SurfacedTrace[] {
   return traces;
 }
 
-function collectCompositions(indexPath: string): SurfacedComposition[] {
+export function collectCompositions(indexPath: string): SurfacedComposition[] {
   const html = readFileSync(indexPath, "utf-8");
   const baseDir = dirname(indexPath);
   const out: SurfacedComposition[] = [
@@ -589,7 +589,7 @@ function collectCompositions(indexPath: string): SurfacedComposition[] {
     const src = div.getAttribute("data-composition-src");
     if (!src) continue;
     const subPath = resolve(baseDir, src);
-    if (!existsSync(subPath)) continue;
+    if (!statSync(subPath, { throwIfNoEntry: false })?.isFile()) continue;
     const id = div.getAttribute("data-composition-id") ?? src;
     out.push(surfaceComposition(readFileSync(subPath, "utf-8"), id, src));
   }

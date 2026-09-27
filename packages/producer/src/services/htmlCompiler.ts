@@ -991,7 +991,7 @@ function inlineSubCompositions(
         let compHtml = subCompositions.get(srcPath) || null;
         if (!compHtml) {
           const filePath = resolve(projectDir, srcPath);
-          if (existsSync(filePath)) {
+          if (isRegularFile(filePath)) {
             compHtml = readFileSync(filePath, "utf-8");
           }
         }
