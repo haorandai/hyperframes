@@ -16,7 +16,7 @@ function fpsToFfmpegArg(fps: Fps): string {
 }
 
 // Fully opaque frames can arrive as RGB PNGs among RGBA ones. The format change would
-// rebuild the filter graph, which paletteuse cannot survive (ffmpeg exits 190).
+// rebuild the filter graph, which paletteuse cannot survive (ffmpeg fails the encode).
 function framesInput(input: GifEncodeArgsInput, fpsArg: string): string[] {
   return [
     "-framerate",
