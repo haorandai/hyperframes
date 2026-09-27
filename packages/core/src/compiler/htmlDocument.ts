@@ -210,7 +210,6 @@ const RAW_TEXT_TAGS = ["script", "style", "title", "textarea"] as const;
 type DocumentTag = "<head" | "</head" | "<body" | "</body";
 const COMMENT_END = /--!?>/g;
 
-/** Each `<` that opens markup, skipping comments, raw text and tag bodies; linear in the input. */
 function* markupStarts(lowered: string): Generator<number> {
   const unclosedRawText = new Set<string>();
   let cursor = 0;
@@ -230,7 +229,6 @@ function findDocumentTag(html: string, tag: DocumentTag): number {
   return -1;
 }
 
-/** Offsets of every `<name` start tag outside comments and raw text, in source order. */
 export function findStartTags(html: string, name: string): number[] {
   const lowered = lowerAscii(html);
   const token = `<${lowerAscii(name)}`;
