@@ -6,8 +6,10 @@ class FakeAnimation {}
 class FakeCSSAnimation extends FakeAnimation {}
 class FakeCSSTransition extends FakeAnimation {}
 
+// Named as its element's computed style names it at the time, so it counts as authored.
 const makeAnimation = (target: Element, kind: typeof FakeAnimation = FakeCSSAnimation) =>
   Object.assign(new kind(), {
+    animationName: window.getComputedStyle(target).animationName,
     currentTime: 0,
     pause: vi.fn(),
     play: vi.fn(),
@@ -36,6 +38,7 @@ describe("css adapter", () => {
   afterEach(() => {
     Reflect.deleteProperty(document, "getAnimations");
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it("has correct name", () => {
@@ -178,6 +181,73 @@ describe("css adapter", () => {
 
     document.body.removeChild(el);
     vi.restoreAllMocks();
+  });
+
+  it("matches a name that computed style escapes", () => {
+    const el = document.createElement("div");
+    document.body.appendChild(el);
+    vi.stubGlobal("CSS", { escape: (name: string) => name.replace(/ /g, "\\ ") });
+    vi.spyOn(window, "getComputedStyle").mockImplementation(
+      () => ({ animationName: "fade\\ in" }) as CSSStyleDeclaration,
+    );
+    const animation = Object.assign(makeAnimation(el), { animationName: "fade in" });
+    mockLiveAnimations(el, [animation]);
+
+    const adapter = createCssAdapter();
+    adapter.discover();
+    adapter.seek({ time: 2 });
+
+    expect(animation.currentTime).toBe(2000);
+    el.remove();
+  });
+
+  describe("names each element's computed style lists at discover", () => {
+    const a = document.createElement("div");
+    const b = document.createElement("div");
+    const named = (computed: Map<Element, string>) => {
+      document.body.append(a, b);
+      vi.spyOn(window, "getComputedStyle").mockImplementation(
+        (el) => ({ animationName: computed.get(el) ?? "none" }) as CSSStyleDeclaration,
+      );
+    };
+    const seekLive = (live: Animation[]) => {
+      document.getAnimations = () => live;
+      const adapter = createCssAdapter();
+      adapter.discover();
+      adapter.seek({ time: 2 });
+    };
+
+    afterEach(() => {
+      a.remove();
+      b.remove();
+    });
+
+    it("every name, not only the first", () => {
+      named(new Map([[a, "pulse, slide"]]));
+      const slide = Object.assign(makeAnimation(a), { animationName: "slide" });
+      seekLive([slide]);
+      expect(slide.currentTime).toBe(2000);
+    });
+
+    it("on its own element: the same name a class adds to another is not authored there", () => {
+      named(
+        new Map([
+          [a, "slide"],
+          [b, "pulse"],
+        ]),
+      );
+      const onB = Object.assign(makeAnimation(b), { animationName: "slide" });
+      seekLive([makeAnimation(a), onB]);
+      expect(onB.currentTime).toBe(0);
+    });
+
+    it("a name with a comma, which computed style escapes", () => {
+      vi.stubGlobal("CSS", { escape: (name: string) => name.replace(/,/g, "\\,") });
+      named(new Map([[a, "pulse, n\\,m"]]));
+      const comma = Object.assign(makeAnimation(a), { animationName: "n,m" });
+      seekLive([comma]);
+      expect(comma.currentTime).toBe(2000);
+    });
   });
 
   describe("after the browser replaces an element's CSSAnimation", () => {
@@ -354,6 +424,43 @@ describe("css adapter", () => {
         expect(other.pause).not.toHaveBeenCalled();
         expect(other.play).not.toHaveBeenCalled();
       }
+    });
+
+    describe("when a class changes the element's animations mid-clip", () => {
+      // The class's animation is the WAAPI adapter's: it plays from where it starts.
+      const added = () => Object.assign(makeAnimation(el), { animationName: "pulse" });
+
+      it("seeks the authored one and leaves the one the class adds alone", () => {
+        const own = makeAnimation(el);
+        const pulse = added();
+        const { adapter, replace } = setup([own]);
+
+        replace([own, pulse]);
+        adapter.seek({ time: 3 });
+        adapter.play?.();
+        adapter.pause();
+
+        expect(own.currentTime).toBe(2000);
+        expect(pulse.currentTime).toBe(0);
+        expect(pulse.pause).not.toHaveBeenCalled();
+        expect(pulse.play).not.toHaveBeenCalled();
+      });
+
+      it("leaves the one that replaces it alone, and writes no inline pose over it", () => {
+        const own = makeAnimation(el);
+        const pulse = added();
+        const { adapter, replace } = setup([own]);
+
+        adapter.seek({ time: 1.5 });
+        Object.assign(own, { playState: "idle" });
+        replace([pulse]);
+        adapter.seek({ time: 3 });
+
+        expect(pulse.currentTime).toBe(0);
+        expect(pulse.pause).not.toHaveBeenCalled();
+        expect(el.style.animationDelay).toBe("");
+        expect(el.style.animationPlayState).toBe("");
+      });
     });
 
     it("seeks every animation where the browser has no CSSAnimation to tell them apart", () => {

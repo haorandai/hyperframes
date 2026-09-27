@@ -1,9 +1,11 @@
 import type { RuntimeDeterministicAdapter } from "../types";
 import { swallow } from "../diagnostics";
 import { isHtmlElement } from "../domRealm";
+import { type AuthoredCssAnimations, createAuthoredCssAnimations } from "./cssAnimation";
 
 export function createCssAdapter(params?: {
   resolveStartSeconds?: (element: Element) => number;
+  authored?: AuthoredCssAnimations;
 }): RuntimeDeterministicAdapter {
   let entries: Array<{
     el: HTMLElement;
@@ -11,8 +13,9 @@ export function createCssAdapter(params?: {
     basePlayState: string;
     cycleSeconds: number;
     delays: number[];
-    handles?: Animation[];
+    handles: Animation[];
   }> = [];
+  const authored = params?.authored ?? createAuthoredCssAnimations();
 
   const safeGetAnimations = (
     source: Document | HTMLElement,
@@ -26,23 +29,30 @@ export function createCssAdapter(params?: {
     }
   };
 
+  const ownTarget = (animation: Animation) => {
+    const effect = animation.effect as KeyframeEffect | null;
+    return effect?.pseudoElement ? null : effect?.target;
+  };
+
   const readLiveAnimations = (pageAnimations?: () => Animation[]): Map<Element, Animation[]> => {
     const byElement = new Map<Element, Animation[]>();
     if (entries.length === 0) return byElement;
     const canTellCss = typeof CSSAnimation !== "undefined";
+    const isAuthored = (animation: Animation) =>
+      !canTellCss || authored.has(animation as CSSAnimation);
     for (const animation of safeGetAnimations(document, pageAnimations)) {
       if (canTellCss && !(animation instanceof CSSAnimation)) continue;
-      const effect = animation.effect as KeyframeEffect | null;
-      if (!effect?.target || effect.pseudoElement) continue;
-      const list = byElement.get(effect.target);
-      if (list) list.push(animation);
-      else byElement.set(effect.target, [animation]);
+      const target = ownTarget(animation);
+      if (!target) continue;
+      const list = byElement.get(target) ?? [];
+      byElement.set(target, list);
+      if (isAuthored(animation)) list.push(animation);
     }
     return byElement;
   };
 
   // A finished no-fill animation leaves the scan but stays; a write revives a cancelled (idle) one.
-  const keepHandles = (known: Animation[] = [], scanned: Animation[] = []): Animation[] => [
+  const keepHandles = (known: Animation[], scanned: Animation[] = []): Animation[] => [
     ...scanned,
     ...known.filter((animation) => !scanned.includes(animation) && animation.playState !== "idle"),
   ];
@@ -155,17 +165,19 @@ export function createCssAdapter(params?: {
       for (const entry of entries) restoreInlineStyles(entry);
       const known = new Map(entries.map((entry) => [entry.el, entry.handles]));
       entries = [];
+      authored.reset();
       const all = document.querySelectorAll("*");
       for (const rawEl of all) {
         if (!isHtmlElement(rawEl)) continue;
         const style = window.getComputedStyle(rawEl);
         if (!style.animationName || style.animationName === "none") continue;
+        authored.record(rawEl, style);
         entries.push({
           el: rawEl,
           baseDelay: rawEl.style.animationDelay || "",
           basePlayState: rawEl.style.animationPlayState || "",
           ...readAnimationTimes(style),
-          handles: known.get(rawEl),
+          handles: known.get(rawEl) ?? [],
         });
       }
     },
@@ -202,7 +214,7 @@ export function createCssAdapter(params?: {
         if (!entry.el.isConnected) continue;
         const start = resolveEntryStartSeconds(entry.el);
         const localTimeMs = Math.max(0, time - start) * 1000;
-        if (entry.handles?.length) {
+        if (entry.handles.length || live.has(entry.el)) {
           if (entry.el.style.animationDelay !== entry.baseDelay) restoreInlineStyles(entry);
           seekAnimations(entry.handles, localTimeMs);
           continue;
