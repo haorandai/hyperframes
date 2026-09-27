@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import gsap from "gsap";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   interpolateVolumeGain,
   probeAndCacheElementVolume,
@@ -191,6 +191,47 @@ describe("probeAndCacheElementVolume", () => {
     const envelope = cache.get(audio);
     expect(envelope).toBeDefined();
     expect(interpolateVolumeGain(envelope!, 0.5)).toBeCloseTo(0.375, 3);
+  });
+
+  it.each([
+    ["a {} spacer", (tl: gsap.core.Timeline) => tl.to({}, { duration: 25 })],
+    ["a tl.call", (tl: gsap.core.Timeline) => tl.call(() => {}, [], 3)],
+    ["a plain counter", (tl: gsap.core.Timeline) => tl.to({ n: 0 }, { n: 100, duration: 5 })],
+  ])("does not seek for %s", (_name, add) => {
+    const audio = document.createElement("audio");
+    audio.dataset.start = "0";
+    audio.dataset.duration = "25";
+    document.body.append(audio);
+    const timeline = gsap.timeline({ paused: true });
+    add(timeline);
+    const seek = vi.spyOn(timeline, "totalTime");
+
+    probeAndCacheElementVolume(audio, timeline, 25, new WeakMap());
+
+    expect(seek.mock.calls.filter((args) => args.length > 0)).toHaveLength(0);
+  });
+
+  it("samples a class instance whose volume setter writes the element", () => {
+    const audio = document.createElement("audio");
+    audio.dataset.start = "0";
+    audio.dataset.duration = "1";
+    audio.dataset.volume = "0";
+    document.body.append(audio);
+    class Fader {
+      get volume() {
+        return audio.volume;
+      }
+      set volume(value: number) {
+        audio.volume = value;
+      }
+    }
+    const timeline = gsap.timeline({ paused: true });
+    timeline.fromTo(new Fader(), { volume: 0 }, { volume: 0.5, duration: 1, ease: "none" }, 0);
+    const cache = new WeakMap<HTMLMediaElement, { time: number; volume: number }[]>();
+
+    probeAndCacheElementVolume(audio, timeline, 1, cache);
+
+    expect(interpolateVolumeGain(cache.get(audio) ?? [], 0.5)).toBeCloseTo(0.25, 3);
   });
 
   it("still samples a keyframed volume tween on the element", () => {
