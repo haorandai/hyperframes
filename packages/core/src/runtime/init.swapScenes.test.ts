@@ -1197,6 +1197,24 @@ window.__timelines.a = tl;`;
     await expect(swap).rejects.toThrow("a scene changed while this swap waited");
   });
 
+  it("refuses a swap whose scene's wrapper moved before a background in the film while both scenes are wrapped", async () => {
+    const background = document.createElement("div");
+    let wrapper!: HTMLElement;
+    // The film reads background, [a], [b]: no scene is a direct child of the film root.
+    const arrange = () => {
+      wrapper = wrapA();
+      const other = document.createElement("div");
+      sceneHost("b").before(other);
+      other.append(sceneHost("b"));
+      filmRoot().prepend(background);
+    };
+    const { swap, answer } = await bootWithPendingCaptions(undefined, arrange);
+    // Each wrapper still holds its scene alone; only the film root's order changed.
+    background.before(wrapper);
+    answer(new Response("null", { status: 404 }));
+    await expect(swap).rejects.toThrow("a scene changed while this swap waited");
+  });
+
   it("refuses a swap whose scene style moved to another parent while its caption overrides loaded", async () => {
     const { swap, answer } = await bootWithPendingCaptions();
     // The new style would take the moved one's place, out of cascade order.
