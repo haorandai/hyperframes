@@ -192,7 +192,8 @@ function injectStudioMotionScript(
   );
 }
 
-const GSAP_CDN_FALLBACK_SCRIPT = `<script data-hf-gsap-fallback>
+const GSAP_FALLBACK_ATTR = "data-hf-gsap-fallback";
+const GSAP_CDN_FALLBACK_SCRIPT = `<script ${GSAP_FALLBACK_ATTR}>
 (function(){
   var cdnBase="https://cdn.jsdelivr.net/npm/gsap@${GSAP_CDN_VERSION}/dist/";
   var loaded={};
@@ -214,7 +215,7 @@ const GSAP_CDN_FALLBACK_SCRIPT = `<script data-hf-gsap-fallback>
 </script>`;
 
 function injectGsapCdnFallback(html: string): string {
-  if (html.includes("data-hf-gsap-fallback")) return html;
+  if (html.includes(GSAP_FALLBACK_ATTR)) return html;
   if (html.includes("<head>")) return html.replace("<head>", "<head>" + GSAP_CDN_FALLBACK_SCRIPT);
   return GSAP_CDN_FALLBACK_SCRIPT + html;
 }

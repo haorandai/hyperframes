@@ -3,13 +3,8 @@ import { preloadMedia } from "./preloadMedia";
 import { installRuntimeControlBridge, postRuntimeMessage, setRuntimeProtocolFps } from "./bridge";
 import { instantTolerance } from "../clipFacts";
 import { isInClipWindow } from "./clipWindow";
-import {
-  revealTimedClipsAfterFirstPass,
-  SKIPPED_CLIP,
-  skipsHiddenImages,
-  UPCOMING_ATTR,
-} from "./timedClipHide";
-import { STUDIO_PREVIEW_LAZY_ATTR } from "../studioPreviewMark";
+import { revealTimedClipsAfterFirstPass, SKIPPED_CLIP, skipsHiddenImages } from "./timedClipHide";
+import { STUDIO_PREVIEW_LAZY_ATTR, STUDIO_PREVIEW_UPCOMING_ATTR } from "../studioPreviewMark";
 import { initRuntimeAnalytics, emitAnalyticsEvent } from "./analytics";
 import { injectCompositionCssVariables } from "./getVariables";
 import { createCssAdapter } from "./adapters/css";
@@ -2617,7 +2612,7 @@ export function initSandboxRuntimeModular(): void {
         clipChainVisibleAt(rawNode.parentElement, currentTime, visibleAt, rootComp);
       rawNode.style.visibility = isVisibleNow ? "visible" : "hidden";
       rawNode.toggleAttribute(
-        UPCOMING_ATTR,
+        STUDIO_PREVIEW_UPCOMING_ATTR,
         hiddenImagesSkipped && !isVisibleNow && dueSoon(rawNode, visibleAt, currentTime),
       );
       if (!isMediaElement(rawNode) && !isImageElement(rawNode)) decidedTimedClip = true;
@@ -3543,7 +3538,7 @@ export function initSandboxRuntimeModular(): void {
       for (const img of undecoded) {
         if (img.hasAttribute(STUDIO_PREVIEW_LAZY_ATTR)) img.setAttribute("loading", "eager");
         for (let clip = img.closest(SKIPPED_CLIP); clip; clip = img.closest(SKIPPED_CLIP))
-          clip.setAttribute(UPCOMING_ATTR, "");
+          clip.setAttribute(STUDIO_PREVIEW_UPCOMING_ATTR, "");
       }
       let capTimer = 0;
       const capped = new Promise<void>((resolve) => {
