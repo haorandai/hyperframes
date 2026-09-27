@@ -15,6 +15,7 @@ import { join, relative } from "node:path";
 import { registerFileRoutes } from "./files";
 import { createStudioApi } from "../createStudioApi";
 import { fileContentVersion } from "../helpers/fileVersion";
+import { ProjectRootMissingError } from "@hyperframes/core";
 import { mkdirWithinProject } from "../helpers/safePath";
 import type { StudioApiAdapter } from "../types";
 
@@ -308,20 +309,32 @@ describe("resolveProjectPath why", () => {
     await expectProjectGone(await upload(createStudioApi(adapter)), project);
   });
 
-  it.each([
-    ["a save", "arrayBuffer", "PUT", "files/inside.txt", "new"],
-    ["a rename", "text", "PATCH", "files/inside.txt", JSON.stringify({ newPath: "moved.txt" })],
-    ["a duplicate", "text", "POST", "duplicate-file", JSON.stringify({ path: "inside.txt" })],
-  ] as const)(
-    "answers that the project folder is gone when it vanishes while %s reads its body",
-    async (_, read, method, route, body) => {
+  describe.each([
+    ["a host that keeps resolving the project", (adapter: StudioApiAdapter) => adapter],
+    [
+      "a host that stops resolving a vanished project",
+      (adapter: StudioApiAdapter): StudioApiAdapter => ({
+        ...adapter,
+        resolveProject: async (id) => {
+          const project = await adapter.resolveProject(id);
+          return project && existsSync(project.dir) ? project : null;
+        },
+      }),
+    ],
+  ])("on %s", (_, host) => {
+    function vanishWhileReading(
+      read: "arrayBuffer" | "text",
+      method: string,
+      route: string,
+      body: string,
+    ) {
       const { project, adapter } = fixture();
       const readBody = Request.prototype[read];
       vi.spyOn(Request.prototype, read).mockImplementation(function (this: Request) {
         renameSync(project, `${project}-renamed`);
         return readBody.call(this);
       });
-      const response = await createStudioApi(adapter).request(
+      const response = createStudioApi(host(adapter)).request(
         `http://localhost/projects/demo/${route}`,
         {
           method,
@@ -329,9 +342,44 @@ describe("resolveProjectPath why", () => {
           body,
         },
       );
-      await expectProjectGone(response, project);
-    },
-  );
+      return { project, response };
+    }
+
+    it.each([
+      ["a save", "arrayBuffer", "PUT", "files/inside.txt", "new"],
+      ["a rename", "text", "PATCH", "files/inside.txt", JSON.stringify({ newPath: "moved.txt" })],
+      ["a duplicate", "text", "POST", "duplicate-file", JSON.stringify({ path: "inside.txt" })],
+    ] as const)(
+      "answers that the project folder is gone when it vanishes while %s reads its body",
+      async (_, read, method, route, body) => {
+        const { project, response } = vanishWhileReading(read, method, route, body);
+        await expectProjectGone(await response, project);
+      },
+    );
+
+    it("keeps a malformed request's 400 when the folder vanishes", async () => {
+      const { response } = vanishWhileReading("text", "PATCH", "files/inside.txt", "{}");
+      expect((await response).status).toBe(400);
+    });
+  });
+
+  it.each([
+    ["an error", () => new Error("read failed")],
+    ["the missing-folder error", () => new ProjectRootMissingError("gone")],
+  ])("drops a failed route's own headers from the 404 when it throws %s", async (_, error) => {
+    const { project, adapter } = fixture();
+    const api = createStudioApi(adapter);
+    api.get("/projects/:id/cached", (c) => {
+      c.header("ETag", '"thumb"');
+      throw error();
+    });
+    rmSync(project, { recursive: true, force: true });
+
+    const response = await api.request("http://localhost/projects/demo/cached");
+
+    expect(response.headers.get("ETag")).toBeNull();
+    await expectProjectGone(response, project);
+  });
 
   it("reports a missing project directory as 404, not 403", async () => {
     const { app, project } = fixture();

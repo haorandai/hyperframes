@@ -15,7 +15,7 @@ import { registerSelectionRoutes } from "./routes/selection.js";
 import { registerMediaRoutes } from "./routes/media.js";
 import { registerGlobalAssetRoutes } from "./routes/globalAssets.js";
 import { registerHistoryRoutes } from "./routes/history.js";
-import { projectDirMissing } from "./helpers/projectDirMissing.js";
+import { replaceWithProjectDirMissing } from "./helpers/projectDirMissing.js";
 import { isProjectRootMissing } from "./helpers/safePath.js";
 
 /**
@@ -28,16 +28,20 @@ export function createStudioApi(adapter: StudioApiAdapter): Hono {
   const api = new Hono();
   api.use(async function answerProjectDirMissingAfterErrorHandlers(c, next) {
     await next();
-    if (isProjectRootMissing(c.error)) c.res = projectDirMissing(c);
+    if (isProjectRootMissing(c.error)) replaceWithProjectDirMissing(c);
   });
-  // A request that fails once its project folder has vanished failed because of that, whatever the route answered.
+  // A project request that fails after its folder vanished answers that the folder is gone.
   api.use("/projects/:id/*", async function answerProjectDirMissingForVanishedFolder(c, next) {
+    // Looked up first: once the folder is gone, some hosts no longer resolve the project.
+    // ponytail: one extra lookup per project request; memoize per request if an adapter makes it costly.
+    let dir: string | undefined;
+    try {
+      dir = (await adapter.resolveProject(c.req.param("id")))?.dir;
+    } catch {
+      // The route runs its own lookup and reports that failure.
+    }
     await next();
-    if (c.res.status < 403) return;
-    const project = await Promise.resolve()
-      .then(() => adapter.resolveProject(c.req.param("id")))
-      .catch(() => null);
-    if (project && !existsSync(project.dir)) c.res = projectDirMissing(c);
+    if (c.res.status >= 403 && dir && !existsSync(dir)) replaceWithProjectDirMissing(c);
   });
 
   registerProjectRoutes(api, adapter);
