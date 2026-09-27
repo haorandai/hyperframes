@@ -218,7 +218,10 @@
             var back = Math.atan2(ctrl[1] - tip[1], ctrl[0] - tip[0]);
             var len = 30 * unit;
             var barb = function (spread) {
-              return [tip[0] + Math.cos(back + spread) * len, tip[1] + Math.sin(back + spread) * len];
+              return [
+                tip[0] + Math.cos(back + spread) * len,
+                tip[1] + Math.sin(back + spread) * len,
+              ];
             };
             return [
               function (u) {

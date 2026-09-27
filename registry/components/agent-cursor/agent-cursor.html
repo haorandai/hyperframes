@@ -357,7 +357,13 @@
             var scale = 0.9 + 0.1 * enter(clamp01((t - 0.15 * k) / (0.35 * k)));
             tag.style.transformOrigin = (flip * 100).toFixed(1) + "% 0";
             tag.style.transform =
-              "translate(" + x.toFixed(2) + "px," + y.toFixed(2) + "px) scale(" + scale.toFixed(3) + ")";
+              "translate(" +
+              x.toFixed(2) +
+              "px," +
+              y.toFixed(2) +
+              "px) scale(" +
+              scale.toFixed(3) +
+              ")";
             var leaving = clamp01((t - T_EXIT) / (0.25 * k));
             var shown = clamp01((t - 0.15 * k) / (0.2 * k)) * (1 - leaving);
             tag.style.opacity = gone ? "0" : shown.toFixed(3);
