@@ -280,6 +280,7 @@ describe("missing_or_empty_sub_composition", () => {
 
     expect(finding?.message).toContain("compositions/scene-title");
     expect(finding?.message).toContain("a folder, not an HTML file");
+    expect(finding?.fixHint).toContain('"compositions/scene-title/index.html"');
   });
 
   it("errors when the referenced sub-composition file has content but no data-composition-id root", async () => {

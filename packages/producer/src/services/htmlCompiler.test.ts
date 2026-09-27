@@ -829,15 +829,19 @@ describe("detectRenderModeHints", () => {
       [{ id: "intro", src: "compositions/intro" }],
       {},
     );
-    mkdirSync(join(projectDir, "compositions", "intro"));
-    writeFileSync(
-      join(projectDir, "compositions", "intro", "index.html"),
-      validSubCompHtml("intro", "Intro"),
-    );
+    try {
+      mkdirSync(join(projectDir, "compositions", "intro"));
+      writeFileSync(
+        join(projectDir, "compositions", "intro", "index.html"),
+        validSubCompHtml("intro", "Intro"),
+      );
 
-    await expect(
-      compileForRender(projectDir, join(projectDir, "index.html"), projectDir),
-    ).rejects.toThrow(/compositions\/intro[\s\S]*a folder, not an HTML file/);
+      await expect(
+        compileForRender(projectDir, join(projectDir, "index.html"), projectDir),
+      ).rejects.toThrow(/compositions\/intro[\s\S]*a folder, not an HTML file/);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
   });
 
   it("compileForRender aborts when a data-composition-src reference points at a missing file", async () => {

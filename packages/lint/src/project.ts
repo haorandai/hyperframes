@@ -601,7 +601,7 @@ function lintMissingOrEmptySubComposition(
   rootHtml: string,
 ): HyperframeLintFinding[] {
   // Dedup by src path — the same reference can appear from nested sub-comps.
-  const checked = new Map<string, { srcPath: string; problem: string }>();
+  const checked = new Map<string, { srcPath: string; problem: string; folder?: true }>();
   const visited = new Set<string>();
 
   // fallow-ignore-next-line complexity
@@ -630,7 +630,11 @@ function lintMissingOrEmptySubComposition(
       }
       if (!statSync(filePath).isFile()) {
         if (!checked.has(srcPath)) {
-          checked.set(srcPath, { srcPath, problem: "it is a folder, not an HTML file" });
+          checked.set(srcPath, {
+            srcPath,
+            problem: "it is a folder, not an HTML file",
+            folder: true,
+          });
         }
         continue;
       }
@@ -656,17 +660,18 @@ function lintMissingOrEmptySubComposition(
   walk(rootHtml);
 
   const findings: HyperframeLintFinding[] = [];
-  for (const { srcPath, problem } of checked.values()) {
+  for (const { srcPath, problem, folder } of checked.values()) {
     findings.push({
       code: "missing_or_empty_sub_composition",
       severity: "error",
       message: `data-composition-src references "${srcPath}", but ${problem}.`,
-      fixHint:
-        `Fix this before rendering — the render pre-flight rejects unusable sub-compositions. ` +
-        `Write valid HTML into "${srcPath}" — it needs a <template> or <body> containing an element with ` +
-        `data-composition-id, data-width, and data-height. Preview/studio still tolerates and skips the ` +
-        "scene while you author it. If a scene-authoring step is still running, wait for it to finish " +
-        "before referencing the file, or re-run the step that generates it.",
+      fixHint: folder
+        ? `Point data-composition-src at the HTML file inside the folder, such as "${srcPath}/index.html".`
+        : `Fix this before rendering — the render pre-flight rejects unusable sub-compositions. ` +
+          `Write valid HTML into "${srcPath}" — it needs a <template> or <body> containing an element with ` +
+          `data-composition-id, data-width, and data-height. Preview/studio still tolerates and skips the ` +
+          "scene while you author it. If a scene-authoring step is still running, wait for it to finish " +
+          "before referencing the file, or re-run the step that generates it.",
     });
   }
 
