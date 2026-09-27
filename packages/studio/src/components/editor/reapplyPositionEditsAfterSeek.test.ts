@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { reapplyPositionEditsAfterSeek } from "./manualEditsSeekReapply";
 import { STUDIO_PATH_OFFSET_ATTR } from "./manualEditsTypes";
+import { STUDIO_MOTION_TIMELINE_ID } from "./studioMotionTypes";
 
 describe("reapplyPositionEditsAfterSeek", () => {
   afterEach(() => {
@@ -16,6 +17,18 @@ describe("reapplyPositionEditsAfterSeek", () => {
     reapplyPositionEditsAfterSeek(document);
 
     expect(queryAll).not.toHaveBeenCalled();
+  });
+
+  it("still clears a motion timeline whose marks an undo removed", () => {
+    document.body.innerHTML = '<div id="a"></div>';
+    const kill = vi.fn();
+    const win = window as unknown as { __timelines?: Record<string, unknown> };
+    win.__timelines = { [STUDIO_MOTION_TIMELINE_ID]: { kill } };
+
+    reapplyPositionEditsAfterSeek(document);
+
+    expect(kill).toHaveBeenCalledTimes(1);
+    delete win.__timelines;
   });
 
   it("still migrates a legacy double-prefixed edit mark", () => {

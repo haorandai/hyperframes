@@ -34,7 +34,7 @@ function queryStudioElements(doc: Document, attr: string): HTMLElement[] {
 
 function reapplyPathOffsets(doc: Document): void {
   for (const el of queryStudioElements(doc, STUDIO_PATH_OFFSET_ATTR)) {
-    // Unlike size below, the offset channels COMPOSE — applying both doubles the move.
+    // Unlike size below, the offset channels add up: applying both doubles the move.
     if (gsapAnimatesProperty(el, "x", "y")) continue;
     const x = el.style.getPropertyValue(STUDIO_OFFSET_X_PROP);
     const y = el.style.getPropertyValue(STUDIO_OFFSET_Y_PROP);
@@ -45,12 +45,8 @@ function reapplyPathOffsets(doc: Document): void {
 }
 
 /**
- * Put the studio's committed size back after a seek, GSAP-sized elements included.
- * Size does not compose the way the offset above does: both channels write width
- * and height, so the later write wins on the same number. Standing aside meant
- * nothing held the size while a soft reload reverted the old timeline (GSAP hands
- * back each tween's recorded starting width), so the element sat at its stylesheet
- * size until the new one rendered — the jump after a resize.
+ * Put the committed size back after a seek, GSAP-sized elements included: both write width and height,
+ * so the later write wins. Standing aside let a soft reload revert to the stylesheet size for a frame.
  */
 function reapplyBoxSizes(doc: Document): void {
   for (const el of queryStudioElements(doc, STUDIO_BOX_SIZE_ATTR)) {
