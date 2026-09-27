@@ -377,8 +377,6 @@ describe("catalog --json meaning search", () => {
   });
 
   it("treats a stray positional the same as --query, rather than dropping it", async () => {
-    // `hyperframes catalog "transition"` used to print the whole registry:
-    // the command declared no positional arg, so citty dropped it silently.
     state.modelStatus = "declined";
     state.ranking = null;
     state.registry = [block("fade-through", ["transition"]), block("count-up", ["number"])];

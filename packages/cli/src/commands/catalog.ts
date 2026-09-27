@@ -242,10 +242,6 @@ export default defineCommand({
       ? items.filter((item) => item.tags?.some((t) => t.toLowerCase() === tagFilter))
       : items;
 
-    // A stray positional (`catalog "crossfade"`) means the same thing as `--query
-    // crossfade`, matching how every other command with free text (add's item
-    // name, docs' topic) treats a bare word: as the thing being asked for,
-    // never as noise to drop.
     const query =
       (typeof args.query === "string" ? args.query.trim() : "") || args.words?.trim() || "";
     // Collected rather than only printed, so --json can carry the same reasons

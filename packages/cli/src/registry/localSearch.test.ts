@@ -238,9 +238,7 @@ describe("the two spellings of a compound word find the same items", () => {
 });
 
 // ── Catalog vocabulary regression, against the real registry ────────────────
-// Editor phrasings that used to miss existing items because the catalog's own
-// tags never used the words agents actually type. A gap here is a tag gap, not
-// a ranker gap: it fails by editing a registry-item.json, not this file.
+// A gap here is a tag gap, not a ranker gap: fix it in a registry-item.json.
 
 describe("editor vocabulary finds the real catalog items that already do it", () => {
   const registryDir = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../registry");
