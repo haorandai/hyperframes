@@ -87,11 +87,8 @@ function wrapSeekReapplyFunction(
   const wrappedSeek = function (this: unknown, ...args: unknown[]): unknown {
     const result = seek.apply(this, args);
     win.__hfStudioManualEditsApply?.();
-    if (reapplyWhenHeldSeekLands)
-      void win.__hfWaitForSeekCompletion?.().then(
-        () => win.__hfStudioManualEditsApply?.(),
-        () => {},
-      );
+    const held = reapplyWhenHeldSeekLands ? (result as PromiseLike<void> | undefined) : undefined;
+    if (typeof held?.then === "function") void held.then(() => win.__hfStudioManualEditsApply?.());
     return result;
   };
   markWrapped(wrappedSeek);

@@ -173,14 +173,17 @@ describe("runtime entry", () => {
     plate.decode = () => new Promise<void>((resolve) => (decoded = resolve));
 
     await evaluateRuntime();
-    window.__player?.seek(5.5);
+    expect(window.__player?.seek(0.5)).toBeUndefined();
+    const landed = window.__player?.seek(5.5);
+    expect(landed).toBeInstanceOf(Promise);
     // Any frame painted now shows the previous scene, while the next one is unskipped so its image loads.
     expect(visibility(current, later)).toEqual(["visible", "hidden"]);
     expect(imageSkipped(later)).toEqual([false]);
     expect(window.__player?.getTime()).toBe(5.5);
     decoded();
-    await window.__hfWaitForSeekCompletion?.();
+    await landed;
     expect(visibility(current, later)).toEqual(["hidden", "visible"]);
+    await window.__hfWaitForSeekCompletion?.();
   });
 
   it("applies a held jump after the cap when an image never decodes", async () => {

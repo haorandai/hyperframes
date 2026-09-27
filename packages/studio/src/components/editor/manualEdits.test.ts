@@ -432,25 +432,28 @@ describe("studio manual edits", () => {
     expect(applied).toBe(11);
   });
 
-  it("reapplies again once a held player seek lands", async () => {
+  it("reapplies once after a seek that applied, and again once a held seek lands", async () => {
     const previewWindow = new Window() as unknown as Parameters<
       typeof installStudioManualEditSeekReapply
-    >[0] & { __player: Record<string, unknown>; __hfWaitForSeekCompletion: () => Promise<void> };
+    >[0] & { __player: Record<string, unknown> };
     let landed = () => {};
-    previewWindow.__player = { seek: () => {} };
-    previewWindow.__hfWaitForSeekCompletion = () =>
-      new Promise<void>((resolve) => (landed = resolve));
+    const held = new Promise<void>((resolve) => (landed = resolve));
+    previewWindow.__player = { seek: (time: number) => (time > 5 ? held : undefined) };
     let applied = 0;
     installStudioManualEditSeekReapply(previewWindow, () => {
       applied += 1;
     });
+    const seek = previewWindow.__player.seek as (time: number) => unknown;
 
-    (previewWindow.__player.seek as (time: number) => void)(5.5);
+    seek(1);
+    await Promise.resolve();
     expect(applied).toBe(1);
-    landed();
-    await Promise.resolve();
-    await Promise.resolve();
+    expect(seek(5.5)).toBe(held);
     expect(applied).toBe(2);
+    landed();
+    await held;
+    await Promise.resolve();
+    expect(applied).toBe(3);
   });
 
   it("reapplies manual edits while fresh playback is active", () => {

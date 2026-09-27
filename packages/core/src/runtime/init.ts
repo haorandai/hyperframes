@@ -94,6 +94,7 @@ import { clampNativeMediaVolume } from "../audioGain";
 import { quantizeSeekTime, quantizeTimeToFrame } from "../inline-scripts/parityContract";
 import { createManualEditGestureWatch } from "./manualEditGestureWatch";
 import type {
+  HeldSeek,
   RuntimeDeterministicAdapter,
   RuntimeJson,
   RuntimeSeekOptions,
@@ -486,7 +487,7 @@ export function initSandboxRuntimeModular(): void {
     _timeline: RuntimeTimelineLike | null;
     play: () => void;
     pause: () => void;
-    seek: (timeSeconds: number, options?: { keepPlaying?: boolean }) => void;
+    seek: (timeSeconds: number, options?: { keepPlaying?: boolean }) => HeldSeek;
     getTime: () => number;
     getDuration: () => number;
     isPlaying: () => boolean;
@@ -3556,12 +3557,12 @@ export function initSandboxRuntimeModular(): void {
       const decoded = Promise.all(
         undecoded.map((img) => (img.decode ? img.decode().catch(() => {}) : undefined)),
       );
-      registerSeekCompletion(
-        Promise.race([decoded, capped]).then(() => {
-          window.clearTimeout(capTimer);
-          if (heldSeek === held) flushHeldSeek();
-        }),
-      );
+      const landed = Promise.race([decoded, capped]).then(() => {
+        window.clearTimeout(capTimer);
+        if (heldSeek === held) flushHeldSeek();
+      });
+      registerSeekCompletion(landed);
+      return landed;
     },
     renderSeek: (timeSeconds, options) => {
       heldSeek = null;
