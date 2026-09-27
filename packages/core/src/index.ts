@@ -280,6 +280,7 @@ export {
   isSafePath,
   mkdirWithinProject,
   ProjectRootMissingError,
+  realpath,
   resolveWithinProject,
 } from "./safePath";
 export type {
