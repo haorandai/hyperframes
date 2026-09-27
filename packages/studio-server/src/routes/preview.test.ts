@@ -1730,6 +1730,7 @@ describe("hf-proxy codec probe", () => {
         "../helpers/mediaMetadata.js",
       )),
       probeMediaMetadata: async () => {
+        tempDirs.push(`${projectDir}-renamed`);
         renameSync(projectDir, `${projectDir}-renamed`);
         return { kind: "video" as const, color: { codecName: "hevc", pixelFormat: "yuv420p" } };
       },
