@@ -664,6 +664,36 @@ describe("layout-audit.browser", () => {
     expect(runAudit().some((issue) => issue.code === "text_box_overflow")).toBe(false);
   });
 
+  it("flags visible text entirely outside a non-clipping card", () => {
+    document.body.innerHTML = `
+      <div id="root" data-composition-id="main" data-width="640" data-height="360">
+        <div id="card"><div id="headline">Visible overflow</div></div>
+      </div>
+    `;
+    installGeometry(
+      {
+        root: rect({ left: 0, top: 0, width: 640, height: 360 }),
+        card: rect({ left: 40, top: 60, width: 200, height: 80 }),
+        headline: rect({ left: 50, top: 170, width: 160, height: 30 }),
+        text: rect({ left: 50, top: 170, width: 160, height: 30 }),
+      },
+      {
+        card: {
+          overflow: "visible",
+          backgroundColor: "rgb(40, 20, 60)",
+          borderTopLeftRadius: "34px",
+        },
+      },
+    );
+    installAuditScript();
+
+    const found = runAudit().filter((issue) => issue.code === "text_box_overflow");
+    expect(found).toHaveLength(1);
+    expect(found[0]?.selector).toBe("#headline");
+    expect(found[0]?.containerSelector).toBe("#card");
+    expect(found[0]?.overflow?.bottom).toBe(60);
+  });
+
   it("does not flag a line parked entirely outside a clipping window", () => {
     document.body.innerHTML = `
       <div id="root" data-composition-id="main" data-width="640" data-height="360">

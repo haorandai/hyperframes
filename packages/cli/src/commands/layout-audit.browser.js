@@ -481,9 +481,6 @@
 
     const container = nearestConstraint(element, root, rootRect);
     const containerRect = container === root ? rootRect : toRect(container.getBoundingClientRect());
-    // A row that never enters the box is parked outside a window. A cut-off still meets the box.
-    const linesInBox = lineRects.filter((line) => intersectionArea(line, containerRect) > 0);
-    const linesInBoxRect = unionRects(linesInBox);
     // Glyph ink (ascenders / descenders / accents / heavy display faces) routinely exceeds a
     // snug line-height box by a few px, proportional to font size. When the constraining box
     // does NOT clip, that vertical spill is normal typography — it shows in the padding, nothing
@@ -494,11 +491,14 @@
     const containerClips = clipsOverflow(
       container === root ? getComputedStyle(root) : getComputedStyle(container),
     );
+    const visibleTextRect = containerClips
+      ? unionRects(lineRects.filter((line) => intersectionArea(line, containerRect) > 0))
+      : textRect;
     const verticalTolerance = containerClips
       ? tolerance
       : Math.max(tolerance, parsePx(elementStyle.fontSize) * 0.2);
-    const containerOverflow = linesInBoxRect
-      ? overflowFor(linesInBoxRect, containerRect, tolerance, verticalTolerance)
+    const containerOverflow = visibleTextRect
+      ? overflowFor(visibleTextRect, containerRect, tolerance, verticalTolerance)
       : null;
     const billedAsClippedText =
       container === element &&
@@ -516,11 +516,11 @@
         containerSelector: selectorFor(container),
         text,
         message: "Text extends outside its nearest visual/container box.",
-        rect: linesInBoxRect,
+        rect: visibleTextRect,
         containerRect,
         overflow: containerOverflow,
         fixHint: textOverflowFixHint(
-          linesInBoxRect,
+          visibleTextRect,
           containerRect,
           containerOverflow,
           parsePx(style.fontSize),
