@@ -1,4 +1,4 @@
-import { STUDIO_PREVIEW_MARK_META } from "../studioPreviewMark";
+import { STUDIO_PREVIEW_MARK_META, STUDIO_PREVIEW_UPCOMING_ATTR } from "../studioPreviewMark";
 
 // Hides timed non-media clips from script evaluation until the first visibility pass decides them;
 // before it, a paused page painted every clip at once. Media is left to init's media pass.
@@ -8,7 +8,7 @@ const HIDE_UNTIL_FIRST_PASS =
   "[data-start]:not(video, audio, img) { visibility: hidden !important; }";
 const PREVIEW_HIDE_UNTIL_FIRST_PASS = 'img[loading="lazy"] { display: none !important; }';
 const SKIP_ATTR = "data-hf-skip-hidden-images";
-export const UPCOMING_ATTR = "data-hf-upcoming";
+export const UPCOMING_ATTR = STUDIO_PREVIEW_UPCOMING_ATTR;
 export const SKIPPED_CLIP = `[data-start]:not(video, audio, img, [${UPCOMING_ATTR}])[style*="visibility: hidden"]`;
 const SKIP_HIDDEN_IMAGES = `${SKIPPED_CLIP} img { display: none !important; }`;
 const STUDIO_PREVIEW_MARK = `meta[name="${STUDIO_PREVIEW_MARK_META}"]`;

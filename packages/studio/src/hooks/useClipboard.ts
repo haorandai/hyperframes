@@ -23,6 +23,7 @@ import {
   authoredMarkup,
   findAuthoredElement,
   findAuthoredElementById,
+  liveMarkupWithoutPreviewMarks,
   parseSavedSource,
 } from "../utils/authoredSource";
 import { serializeStudioFileMutations } from "../utils/studioFileMutationCoordinator";
@@ -86,18 +87,11 @@ function getSelectedDomElement(
   return findElementForSelection(doc, selection, activeCompositionPath);
 }
 
-function withoutPreviewLoadingMarks(live: Element): string {
-  const copy = live.cloneNode(true) as Element;
-  for (const el of [copy, ...Array.from(copy.querySelectorAll("*"))]) {
-    el.removeAttribute("data-hf-upcoming");
-    if (el.tagName === "IMG") el.removeAttribute("loading");
-  }
-  return copy.outerHTML;
-}
-
 function savedMarkupElseLive(saved: Document, live: Element, sourceFile: string): string {
   const authored = findAuthoredElement(saved, live) ?? findAuthoredElementById(saved, live);
-  return authored ? authoredMarkup(authored, live, sourceFile) : withoutPreviewLoadingMarks(live);
+  return authored
+    ? authoredMarkup(authored, live, sourceFile)
+    : liveMarkupWithoutPreviewMarks(live);
 }
 
 async function readSavedMarkup(
