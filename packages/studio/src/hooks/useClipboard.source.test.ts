@@ -220,6 +220,22 @@ describe("copy takes a clip's saved markup, not the runtime's live styling", () 
   });
 });
 
+describe("copy of a clip missing from its saved file", () => {
+  it("takes the preview's markup without the preview's lazy loading or look-ahead mark", async () => {
+    selectTitle();
+    const { clipboard, writes, files, iframe } = mountClipboard();
+    const title = iframe.contentDocument?.querySelector("h1") as Element;
+    title.setAttribute("data-hf-upcoming", "");
+    title.insertAdjacentHTML("beforeend", '<img src="plate.png" loading="lazy">');
+    files["index.html"] = SAVED.replace(/<h1[\s\S]*<\/h1>/, "");
+    clipboard().handleCopy();
+    await clipboard().handlePaste();
+    expect(writes[0]).toContain('<img src="plate.png"');
+    expect(writes[0]).not.toContain("loading=");
+    expect(writes[0]).not.toContain("data-hf-upcoming");
+  });
+});
+
 const SUB_SELECTION = {
   hfId: SUB_HF_ID,
   selector: "h2",
