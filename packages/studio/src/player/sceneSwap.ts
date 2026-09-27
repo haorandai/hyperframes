@@ -25,6 +25,7 @@ export function sceneSwapFor(
   const swap = win?.__hfSwapScenes;
   if (typeof swap !== "function") return null;
   return async (url, isCurrent, cancel) => {
+    if (cancel?.aborted) throw cancel.reason;
     const deadline = new AbortController();
     const timer = setTimeout(
       () => deadline.abort(new Error("the preview took too long to swap")),

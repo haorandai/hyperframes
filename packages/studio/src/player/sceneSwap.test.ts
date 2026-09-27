@@ -72,6 +72,20 @@ describe("sceneSwapFor", () => {
     expect(replaced).toBe(false);
   });
 
+  it("does not start a swap whose cancel signal was aborted before the call", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () => new Response("<html></html>"));
+    const { iframe, swap } = swappableIframe();
+    const cancel = new AbortController();
+    cancel.abort(new Error("superseded by a newer edit"));
+    await expect(sceneSwapFor(iframe)!("/preview", () => true, cancel.signal)).rejects.toThrow(
+      "superseded",
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(swap).not.toHaveBeenCalled();
+  });
+
   it("swaps a document that arrives in time", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response("<html></html>"));
     const { iframe, swap } = swappableIframe();
