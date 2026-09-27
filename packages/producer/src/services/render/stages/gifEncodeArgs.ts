@@ -9,6 +9,7 @@ export interface GifEncodeArgsInput {
   fps: Fps;
   loop: number;
   preserveAlpha: boolean;
+  wholeFrames?: boolean;
 }
 
 function fpsToFfmpegArg(fps: Fps): string {
@@ -40,7 +41,7 @@ export function buildGifPalettegenArgs(input: GifEncodeArgsInput): string[] {
   ];
 }
 
-export function buildGifPaletteuseArgs(input: GifEncodeArgsInput, wholeFrames = false): string[] {
+export function buildGifPaletteuseArgs(input: GifEncodeArgsInput): string[] {
   const fpsArg = fpsToFfmpegArg(input.fps);
   const transparency = input.preserveAlpha ? ":alpha_threshold=128" : "";
   return [
@@ -52,7 +53,7 @@ export function buildGifPaletteuseArgs(input: GifEncodeArgsInput, wholeFrames = 
     `fps=${fpsArg} [x]; [x][1:v] paletteuse=dither=sierra2_4a${transparency}`,
     "-loop",
     String(input.loop),
-    ...(wholeFrames ? WRITE_EVERY_FRAME_WHOLE : []),
+    ...(input.wholeFrames ? WRITE_EVERY_FRAME_WHOLE : []),
     input.outputPath,
   ];
 }

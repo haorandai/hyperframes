@@ -52,7 +52,7 @@ import {
 } from "@hyperframes/engine";
 import {
   clearGifFramesBeforeNext,
-  gifHasTranslucentFrameAfterOpaque,
+  gifClearsAfterLeavingFrameInPlace,
   type Fps,
 } from "@hyperframes/core";
 import type { ProducerLogger } from "../../../logger.js";
@@ -161,23 +161,23 @@ function gifEncodeFailure(
   };
 }
 
-/** Re-encodes with whole frames and clears each one, so no opaque frame shows through later. */
-async function clearOpaqueFramesBeforeTranslucent(
+async function reencodeWithClearedWholeFrames(
   argsInput: GifEncodeArgsInput,
   run: { signal?: AbortSignal; timeout: number },
-): Promise<{ error: string; failureReason?: EncodeResult["failureReason"] } | null> {
-  const result = await runFfmpeg(buildGifPaletteuseArgs(argsInput, true), run);
+  startTime: number,
+): Promise<EncodeResult | null> {
+  const { outputPath } = argsInput;
+  const result = await runFfmpeg(buildGifPaletteuseArgs({ ...argsInput, wholeFrames: true }), run);
   if (!result.success) {
-    return {
-      error: formatFfmpegError(result.exitCode, result.stderr),
-      failureReason: result.failureReason,
-    };
+    const error = formatFfmpegError(result.exitCode, result.stderr);
+    return gifEncodeFailure(startTime, outputPath, error, result.failureReason);
   }
-  const gif = readFileSync(argsInput.outputPath);
+  const gif = readFileSync(outputPath);
   if (!clearGifFramesBeforeNext(gif)) {
-    return { error: "[FFmpeg] GIF output could not be parsed to clear its frames" };
+    const error = "[FFmpeg] GIF output could not be parsed to clear its frames";
+    return gifEncodeFailure(startTime, outputPath, error);
   }
-  writeFileSync(argsInput.outputPath, gif);
+  writeFileSync(outputPath, gif);
   return null;
 }
 
@@ -198,14 +198,7 @@ async function encodeGifFromDir(
   const files = readdirSync(framesDir).filter((file) => file.match(/\.(jpg|jpeg|png)$/i));
   const frameCount = files.length;
   if (frameCount === 0) {
-    return {
-      success: false,
-      outputPath,
-      durationMs: Date.now() - startTime,
-      framesEncoded: 0,
-      fileSize: 0,
-      error: "[FFmpeg] No frame files found in directory",
-    };
+    return gifEncodeFailure(startTime, outputPath, "[FFmpeg] No frame files found in directory");
   }
 
   const argsInput: GifEncodeArgsInput = {
@@ -226,11 +219,12 @@ async function encodeGifFromDir(
         return gifEncodeFailure(startTime, outputPath, error, result.failureReason);
       }
     }
-    if (input.preserveAlpha && gifHasTranslucentFrameAfterOpaque(readFileSync(outputPath))) {
-      const failure = await clearOpaqueFramesBeforeTranslucent(argsInput, run);
-      if (failure) {
-        return gifEncodeFailure(startTime, outputPath, failure.error, failure.failureReason);
-      }
+    if (
+      input.preserveAlpha &&
+      gifClearsAfterLeavingFrameInPlace(readFileSync(outputPath)) !== false
+    ) {
+      const failure = await reencodeWithClearedWholeFrames(argsInput, run, startTime);
+      if (failure) return failure;
     }
 
     const fileSize = existsSync(outputPath) ? statSync(outputPath).size : 0;

@@ -408,7 +408,7 @@ describe("runEncodeStage config plumbing", () => {
 
   async function encodeAlphaGif(paths: { framesDir: string; root: string }, outputPath: string) {
     const { runEncodeStage } = await import("./encodeStage.js");
-    await runEncodeStage(
+    return runEncodeStage(
       makeInput({
         framesDir: paths.framesDir,
         outputPath,
@@ -441,7 +441,7 @@ describe("runEncodeStage config plumbing", () => {
     expect(runFfmpegMock.mock.calls[1]?.[0]).toContain(
       "fps=30 [x]; [x][1:v] paletteuse=dither=sierra2_4a:alpha_threshold=128",
     );
-    // No frame turns translucent after an opaque one, so the encode is today's, untouched.
+    // No frame turns translucent after an opaque one, so the plain encode is left untouched.
     expect(readFileSync(outputPath).equals(oneFrameGif)).toBe(true);
   });
 
@@ -466,6 +466,15 @@ describe("runEncodeStage config plumbing", () => {
       .filter((i) => out[i] === 0x21 && out[i + 1] === 0xf9 && out[i + 2] === 0x04)
       .map((i) => out[i + 3]);
     expect(packed).toEqual([0b0000_1001, 0b0000_1001]);
+  });
+
+  it("fails the encode when the GIF it wrote cannot be read back", async () => {
+    const paths = createFramesDir("png");
+    const outputPath = join(paths.root, "out.gif");
+    writeFileSync(outputPath, "not a gif");
+
+    await expect(encodeAlphaGif(paths, outputPath)).rejects.toThrow("could not be parsed");
+    expect(runFfmpegMock).toHaveBeenCalledTimes(3);
   });
 
   it("keeps opaque GIF encoding on JPEG frames without alpha-only filters", async () => {

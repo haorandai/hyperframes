@@ -76,9 +76,10 @@ function parseApplicationExtension(
   return null;
 }
 
+const PLAIN_TEXT_LABEL = 0x01;
+
 export interface GifFrameLayout {
-  /** Offset of the graphic control block's packed byte, or null when the frame has none. */
-  controlOffset: number | null;
+  controlPackedOffset: number | null;
   localColorTable: boolean;
 }
 
@@ -101,7 +102,7 @@ export function parseAnimatedGifMetadata(
   }
 
   let frameCount = 0;
-  let controlOffset: number | null = null;
+  let controlPackedOffset: number | null = null;
   const delaysCentiseconds: number[] = [];
   let loopCount: number | null = null;
 
@@ -123,7 +124,7 @@ export function parseAnimatedGifMetadata(
         const delay = readU16LE(bytes, pos + 2);
         if (delay == null) return null;
         delaysCentiseconds.push(normalizeDelayCentiseconds(delay));
-        controlOffset = pos + 1;
+        controlPackedOffset = pos + 1;
         pos += 1 + blockSize;
         if (bytes[pos] !== 0) return null;
         pos += 1;
@@ -138,6 +139,7 @@ export function parseAnimatedGifMetadata(
         continue;
       }
 
+      if (label === PLAIN_TEXT_LABEL) controlPackedOffset = null;
       const next = skipSubBlocks(bytes, pos);
       if (next == null) return null;
       pos = next;
@@ -147,10 +149,11 @@ export function parseAnimatedGifMetadata(
     if (introducer === 0x2c) {
       if (pos + 9 > bytes.length) return null;
       const imagePacked = bytes[pos + 8] ?? 0;
-      onFrame?.({ controlOffset, localColorTable: (imagePacked & 0b1000_0000) !== 0 });
-      controlOffset = null;
+      const localColorTable = (imagePacked & 0b1000_0000) !== 0;
+      onFrame?.({ controlPackedOffset, localColorTable });
+      controlPackedOffset = null;
       pos += 9;
-      if ((imagePacked & 0b1000_0000) !== 0) {
+      if (localColorTable) {
         pos += colorTableByteLength(imagePacked);
       }
       if (pos >= bytes.length) return null;
@@ -190,12 +193,16 @@ function frameLayouts(bytes: Uint8Array): GifFrameLayout[] | null {
 }
 
 function disposalOf(bytes: Uint8Array, frame: GifFrameLayout): number | null {
-  return frame.controlOffset === null ? null : (bytes[frame.controlOffset] ?? 0) & DISPOSAL_BITS;
+  return frame.controlPackedOffset === null
+    ? null
+    : (bytes[frame.controlPackedOffset] ?? 0) & DISPOSAL_BITS;
 }
 
-export function gifHasTranslucentFrameAfterOpaque(bytes: Uint8Array): boolean {
+export function gifClearsAfterLeavingFrameInPlace(bytes: Uint8Array): boolean | null {
+  const frames = frameLayouts(bytes);
+  if (frames === null) return null;
   let sawOpaque = false;
-  for (const frame of frameLayouts(bytes) ?? []) {
+  for (const frame of frames) {
     const disposal = disposalOf(bytes, frame);
     if (disposal === LEAVE_IN_PLACE) sawOpaque = true;
     else if (disposal === DISPOSE_TO_BACKGROUND && sawOpaque) return true;
@@ -206,9 +213,11 @@ export function gifHasTranslucentFrameAfterOpaque(bytes: Uint8Array): boolean {
 export function clearGifFramesBeforeNext(bytes: Uint8Array): boolean {
   const frames = frameLayouts(bytes);
   if (frames === null) return false;
-  const controls = frames.flatMap((f) => (f.controlOffset === null ? [] : [f.controlOffset]));
+  const controls = frames.flatMap((f) =>
+    f.controlPackedOffset === null ? [] : [f.controlPackedOffset],
+  );
   const shared = frames.flatMap((f) =>
-    f.controlOffset === null || f.localColorTable ? [] : [f.controlOffset],
+    f.controlPackedOffset === null || f.localColorTable ? [] : [f.controlPackedOffset],
   );
   const hasIndex = (at: number) => ((bytes[at] ?? 0) & HAS_TRANSPARENT_INDEX) !== 0;
   const source = shared.find(hasIndex);

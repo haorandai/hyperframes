@@ -186,7 +186,7 @@ export { queryByAttr } from "./utils/cssSelector";
 export { decodeUrlPathVariants } from "./utils/urlPath";
 export {
   clearGifFramesBeforeNext,
-  gifHasTranslucentFrameAfterOpaque,
+  gifClearsAfterLeavingFrameInPlace,
   parseAnimatedGifMetadata,
   type AnimatedGifMetadata,
 } from "./media/gif";

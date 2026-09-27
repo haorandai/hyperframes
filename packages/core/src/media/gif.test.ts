@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   clearGifFramesBeforeNext,
-  gifHasTranslucentFrameAfterOpaque,
+  gifClearsAfterLeavingFrameInPlace,
   parseAnimatedGifMetadata,
 } from "./gif";
 
@@ -118,14 +118,23 @@ function controls(bytes: Uint8Array): number[][] {
     .map((i) => [bytes[i + 3]!, bytes[i + 6]!]);
 }
 
-describe("gifHasTranslucentFrameAfterOpaque", () => {
+describe("gifClearsAfterLeavingFrameInPlace", () => {
   it("is true only when a frame left in place is followed by one cleared to background", () => {
-    const opaque = controlledFrame(1);
-    const translucent = controlledFrame(2, 1);
-    expect(gifHasTranslucentFrameAfterOpaque(gif([...opaque, ...translucent]))).toBe(true);
-    expect(gifHasTranslucentFrameAfterOpaque(gif([...translucent, ...opaque]))).toBe(false);
-    expect(gifHasTranslucentFrameAfterOpaque(gif([...opaque, ...opaque]))).toBe(false);
-    expect(gifHasTranslucentFrameAfterOpaque(gif([...translucent, ...translucent]))).toBe(false);
+    const leftInPlace = controlledFrame(1);
+    const cleared = controlledFrame(2, 1);
+    expect(gifClearsAfterLeavingFrameInPlace(gif([...leftInPlace, ...cleared]))).toBe(true);
+    expect(gifClearsAfterLeavingFrameInPlace(gif([...cleared, ...leftInPlace]))).toBe(false);
+    expect(gifClearsAfterLeavingFrameInPlace(gif([...leftInPlace, ...leftInPlace]))).toBe(false);
+    expect(gifClearsAfterLeavingFrameInPlace(gif([...cleared, ...cleared]))).toBe(false);
+    expect(gifClearsAfterLeavingFrameInPlace(Uint8Array.from(ascii("not a gif")))).toBeNull();
+  });
+
+  it("does not give an image the control block of the plain text before it", () => {
+    const plainText = [0x21, 0x01, 12, ...new Array<number>(12).fill(0), 1, 65, 0];
+    const textLeftInPlace = [...controlledFrame(1).slice(0, 8), ...plainText];
+    const imageWithoutControl = controlledFrame(2, 1).slice(8);
+    const bytes = gif([...textLeftInPlace, ...imageWithoutControl, ...controlledFrame(2, 1)]);
+    expect(gifClearsAfterLeavingFrameInPlace(bytes)).toBe(false);
   });
 });
 
