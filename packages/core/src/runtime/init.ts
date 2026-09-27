@@ -2,7 +2,12 @@
 import { installRuntimeControlBridge, postRuntimeMessage, setRuntimeProtocolFps } from "./bridge";
 import { instantTolerance } from "../clipFacts";
 import { isInClipWindow } from "./clipWindow";
-import { revealTimedClipsAfterFirstPass, SKIPPED_CLIP, UPCOMING_ATTR } from "./timedClipHide";
+import {
+  revealTimedClipsAfterFirstPass,
+  SKIPPED_CLIP,
+  skipsHiddenImages,
+  UPCOMING_ATTR,
+} from "./timedClipHide";
 import { initRuntimeAnalytics, emitAnalyticsEvent } from "./analytics";
 import { injectCompositionCssVariables } from "./getVariables";
 import { createCssAdapter } from "./adapters/css";
@@ -2550,6 +2555,18 @@ export function initSandboxRuntimeModular(): void {
       });
   };
 
+  const hiddenImagesSkipped = skipsHiddenImages();
+  const LOOKAHEAD_SECONDS = 2;
+  // Unskipped while due in the look-ahead window, so a clip shorter than the window still loads first.
+  const dueSoon = (
+    node: HTMLElement,
+    visibleAt: ReturnType<typeof timedVisibilityAt>,
+    t: number,
+  ) => {
+    const start = resolveStartForElement(node, Number.NaN);
+    return (start > t && start <= t + LOOKAHEAD_SECONDS) || visibleAt(node, t + LOOKAHEAD_SECONDS);
+  };
+
   const applyTimedElementVisibility = (
     currentTime: number,
     visibilityNodes: Element[],
@@ -2558,8 +2575,6 @@ export function initSandboxRuntimeModular(): void {
     const rootComp = resolveRootCompositionElement();
     let decidedTimedClip = false;
     const visibleAt = timedVisibilityAt(timingRevision);
-    const lookaheadSeconds =
-      (window as { __HF_PREVIEW_LOOKAHEAD_S?: number }).__HF_PREVIEW_LOOKAHEAD_S ?? 2;
     for (const rawNode of visibilityNodes) {
       if (!isHtmlElement(rawNode)) continue;
 
@@ -2601,7 +2616,7 @@ export function initSandboxRuntimeModular(): void {
       rawNode.style.visibility = isVisibleNow ? "visible" : "hidden";
       rawNode.toggleAttribute(
         UPCOMING_ATTR,
-        !isVisibleNow && visibleAt(rawNode, currentTime + lookaheadSeconds),
+        hiddenImagesSkipped && !isVisibleNow && dueSoon(rawNode, visibleAt, currentTime),
       );
       if (!isMediaElement(rawNode) && !isImageElement(rawNode)) decidedTimedClip = true;
       if (isVideoElement(rawNode) || isImageElement(rawNode)) {
@@ -2645,6 +2660,7 @@ export function initSandboxRuntimeModular(): void {
   // Images a seek to `time` would reveal undecoded: skipped with their hidden clip, or still loading.
   const undecodedImagesShownAt = (time: number): HTMLImageElement[] =>
     withTimingResolver(() => {
+      if (!hiddenImagesSkipped) return [];
       const rootComp = resolveRootCompositionElement();
       const visibleAt = timedVisibilityAt();
       const shownAt = (el: Element): boolean => {

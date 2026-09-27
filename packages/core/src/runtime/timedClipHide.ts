@@ -3,12 +3,14 @@
 // The rule and its flag live on the page, so every runtime copy shares them.
 const HIDE_ATTR = "data-hf-first-pass-hide";
 const HIDE_UNTIL_FIRST_PASS =
-  "[data-start]:not(video, audio, img) { visibility: hidden !important; } " +
-  'img[loading="lazy"] { display: none !important; }';
-const SKIP_ATTR = "data-hf-skip-hidden-content";
+  "[data-start]:not(video, audio, img) { visibility: hidden !important; }";
+const PREVIEW_HIDE_UNTIL_FIRST_PASS = 'img[loading="lazy"] { display: none !important; }';
+const SKIP_ATTR = "data-hf-skip-hidden-images";
 export const UPCOMING_ATTR = "data-hf-upcoming";
 export const SKIPPED_CLIP = `[data-start]:not(video, audio, img, [${UPCOMING_ATTR}])[style*="visibility: hidden"]`;
-const SKIP_HIDDEN_CONTENT = `${SKIPPED_CLIP} { content-visibility: hidden; }`;
+const SKIP_HIDDEN_IMAGES = `${SKIPPED_CLIP} img { display: none !important; }`;
+// Only Studio's preview route serves this script (studio-server routes/preview.ts), at the head start.
+const STUDIO_PREVIEW_MARK = "script[data-hf-gsap-fallback]";
 
 type FirstPassWindow = Window & {
   __hfFirstPassHidden?: boolean;
@@ -22,16 +24,24 @@ function appendStyle(parent: Element, attr: string, css: string): void {
   parent.appendChild(style);
 }
 
+/** True in Studio's preview, where hidden clips' images are neither fetched nor decoded until due. */
+export function skipsHiddenImages(): boolean {
+  return document.querySelector(`style[${SKIP_ATTR}]`) !== null;
+}
+
 export function hideTimedClipsUntilFirstPass(): void {
   if (typeof document === "undefined") return;
   const parent = document.head ?? document.documentElement;
   if (!parent) return;
-  if (!document.querySelector(`style[${SKIP_ATTR}]`))
-    appendStyle(parent, SKIP_ATTR, SKIP_HIDDEN_CONTENT);
+  const preview = document.querySelector(STUDIO_PREVIEW_MARK) !== null;
+  if (preview && !skipsHiddenImages()) appendStyle(parent, SKIP_ATTR, SKIP_HIDDEN_IMAGES);
   const win = window as FirstPassWindow;
   // A runtime that already initialised may never run another pass to lift a new rule.
   if (win.__hfFirstPassHidden || win.__hyperframeRuntimeBootstrapped) return;
-  appendStyle(parent, HIDE_ATTR, HIDE_UNTIL_FIRST_PASS);
+  const css = preview
+    ? `${HIDE_UNTIL_FIRST_PASS} ${PREVIEW_HIDE_UNTIL_FIRST_PASS}`
+    : HIDE_UNTIL_FIRST_PASS;
+  appendStyle(parent, HIDE_ATTR, css);
   win.__hfFirstPassHidden = true;
 }
 
