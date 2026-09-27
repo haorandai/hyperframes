@@ -16,8 +16,8 @@
   "family": "pointers",
   "profile": "interaction",
   "syncPoints": [
-    { "id": "right-click", "phase": "in", "offset": 0.95 },
-    { "id": "menu-pick", "phase": "in", "offset": 2.25 }
+    { "id": "right-click", "phase": "in", "offset": 0.7 },
+    { "id": "menu-pick", "phase": "in", "offset": 1.85 }
   ],
   "variables": [
     {

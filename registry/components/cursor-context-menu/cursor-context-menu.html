@@ -17,13 +17,14 @@
     pick (number)   index of the item the cursor chooses
     tone (light|dark)
 
-  envelope (default 5.2s): glide 0-0.85s, right-click 0.95s, menu 1.02s, travel
-  1.45-2.1s, click 2.25s, action 2.55s, hold. Shorter durations compress every beat evenly.
+  envelope (default 3.9s): glide 0-0.5s, right-click 0.7s, menu 0.77s, travel
+  1.2-1.65s, click 1.85s, action 2.15s, step aside 2.75-3.15s, hold. Shorter durations
+  compress every beat evenly.
 -->
 <html
   lang="en"
   data-composition-id="cursor-context-menu"
-  data-composition-duration="5.2"
+  data-composition-duration="3.9"
   data-composition-variables='[
     { "id": "items", "type": "string", "role": "content", "label": "Menu items", "default": "Open,Rename,Duplicate,Share,Move to Trash" },
     { "id": "pick", "type": "number", "role": "content", "label": "Chosen item (0 = first)", "default": 2, "min": 0, "max": 9, "step": 1 },
@@ -48,7 +49,8 @@
           --cm-card: #f4f5f9;
           --cm-ink: #121522;
           --cm-dim: #7a8093;
-          --cm-menu: rgba(255, 255, 255, 0.96);
+          --cm-menu: #ffffff;
+          --cm-thumb: #e7e9ee;
           --cm-line: rgba(18, 21, 34, 0.08);
         }
         #root[data-tone="dark"] {
@@ -56,7 +58,8 @@
           --cm-card: #222632;
           --cm-ink: #eef0f7;
           --cm-dim: #8d93a6;
-          --cm-menu: rgba(38, 42, 55, 0.97);
+          --cm-menu: #262a37;
+          --cm-thumb: #2c303c;
           --cm-line: rgba(255, 255, 255, 0.09);
         }
         .cm-stage {
@@ -115,6 +118,14 @@
         .cm-thumb {
           height: 8.4cqw;
           border-radius: 0.7cqw;
+          overflow: hidden;
+          background: var(--cm-thumb);
+          color: var(--cm-dim);
+        }
+        .cm-thumb svg {
+          display: block;
+          width: 100%;
+          height: 100%;
         }
         .cm-name {
           margin-top: 0.8cqw;
@@ -197,7 +208,7 @@
         }
       </style>
 
-      <div id="root" data-composition-id="cursor-context-menu" data-duration="5.2">
+      <div id="root" data-composition-id="cursor-context-menu" data-duration="3.9">
         <div class="cm-stage">
           <div class="cm-window">
             <div class="cm-bar">
@@ -250,7 +261,7 @@
           var duration = Math.max(
             0.001,
             parseFloat(
-              root.dataset.duration || html.getAttribute("data-composition-duration") || "5.2",
+              root.dataset.duration || html.getAttribute("data-composition-duration") || "3.9",
             ),
           );
           root.setAttribute("data-tone", vars.tone === "dark" ? "dark" : "light");
@@ -263,41 +274,95 @@
           if (!labels.length) labels = ["Open"];
           var pick = Math.max(0, Math.min(labels.length - 1, Math.round(Number(vars.pick) || 0)));
 
+          // Thumbnails are drawn in a 206x100 box, the aspect of a grid cell.
+          var THUMBS = {
+            pdf:
+              '<rect x="72" y="8" width="62" height="86" rx="1.5" fill="#000" opacity=".06"/>' +
+              '<rect x="72" y="7" width="62" height="86" rx="1.5" fill="#fff"/>' +
+              '<rect x="79" y="15" width="30" height="4.5" rx="1" fill="#1d2130"/>' +
+              '<rect x="79" y="22.5" width="20" height="2.2" rx="1" fill="#9aa0ad"/>' +
+              '<rect x="79" y="30" width="22" height="3" rx="1.5" fill="#0a84ff"/>' +
+              '<rect x="88" y="35" width="26" height="3" rx="1.5" fill="#34c759"/>' +
+              '<rect x="97" y="40" width="20" height="3" rx="1.5" fill="#ff9f0a"/>' +
+              '<rect x="108" y="45" width="19" height="3" rx="1.5" fill="#0a84ff"/>' +
+              '<g fill="#d5d8de"><rect x="79" y="54" width="48" height="2" rx="1"/>' +
+              '<rect x="79" y="59" width="45" height="2" rx="1"/><rect x="79" y="64" width="48" height="2" rx="1"/>' +
+              '<rect x="79" y="69" width="40" height="2" rx="1"/><rect x="79" y="74" width="47" height="2" rx="1"/>' +
+              '<rect x="79" y="79" width="28" height="2" rx="1"/></g>',
+            video:
+              '<rect width="206" height="100" fill="#12141b"/>' +
+              '<path d="M86 0 H120 L156 70 H50 Z" fill="#fff" opacity=".05"/>' +
+              '<rect y="70" width="206" height="30" fill="#1b1e27"/>' +
+              '<ellipse cx="103" cy="73" rx="48" ry="3.5" fill="#000" opacity=".5"/>' +
+              '<rect x="72" y="29" width="62" height="40" rx="2.5" fill="#2a2f3b"/>' +
+              '<rect x="75" y="32" width="56" height="34" rx="1" fill="#0e2a52"/>' +
+              '<rect x="79" y="36" width="18" height="2.5" rx="1" fill="#fff" opacity=".9"/>' +
+              '<rect x="79" y="40.5" width="12" height="1.6" rx=".8" fill="#fff" opacity=".45"/>' +
+              '<path d="M64 69 H142 L147 73 H59 Z" fill="#3a404d"/>' +
+              '<circle cx="103" cy="49" r="10" fill="#000" fill-opacity=".5" stroke="#fff" stroke-width="1.2"/>' +
+              '<path d="M99.5 44 L108.5 49 L99.5 54 Z" fill="#fff"/>' +
+              '<rect x="174" y="83" width="25" height="11" rx="2.5" fill="#000" opacity=".72"/>' +
+              '<text x="186.5" y="91" font-size="7.5" font-weight="600" fill="#fff" text-anchor="middle">2:14</text>',
+            md:
+              '<rect x="16" y="8" width="174" height="100" rx="1.5" fill="#fff"/>' +
+              '<g font-family="ui-monospace,Menlo,Consolas,monospace" font-size="6.4" fill="#4a5060">' +
+              '<text x="24" y="21" fill="#1d2130" font-weight="700"># Pricing notes</text>' +
+              '<text x="24" y="34">- Starter: $12 / seat</text>' +
+              '<text x="24" y="44">- Pro: $29 / seat</text>' +
+              '<text x="24" y="54">- Team: $79 / seat</text>' +
+              '<text x="24" y="67" fill="#8a90a0">&gt; Annual billing: 2 months free</text>' +
+              '<text x="24" y="80" fill="#1d2130" font-weight="700">## Open questions</text>' +
+              '<text x="24" y="92">- EU VAT on seat add-ons?</text></g>',
+            jpg:
+              '<defs><linearGradient id="cm-sky" x1="0" y1="0" x2="0" y2="1">' +
+              '<stop offset="0" stop-color="#7db8ea"/><stop offset="1" stop-color="#e3f1fb"/></linearGradient>' +
+              '<linearGradient id="cm-lake" x1="0" y1="0" x2="0" y2="1">' +
+              '<stop offset="0" stop-color="#6d9cc4"/><stop offset="1" stop-color="#2f5d85"/></linearGradient></defs>' +
+              '<rect width="206" height="62" fill="url(#cm-sky)"/>' +
+              '<circle cx="160" cy="20" r="7" fill="#fffbe8"/>' +
+              '<path d="M0 58 L22 36 L38 46 L64 20 L88 44 L104 34 L128 52 L150 30 L176 48 L192 38 L206 46 V62 H0 Z" fill="#9db3c9"/>' +
+              '<path d="M64 20 L57 27 L61 25.5 L64 28 L67.5 25.5 L71 27 Z M150 30 L144 36 L148 34.5 L151 37 L154.5 34.5 L158.7 36 Z" fill="#fff"/>' +
+              '<path d="M0 62 V50 C20 46 36 54 58 52 C84 50 100 58 124 56 C150 54 176 50 206 54 V62 Z" fill="#4c7a5a"/>' +
+              '<rect y="62" width="206" height="38" fill="url(#cm-lake)"/>' +
+              '<path d="M122 70 H150 M134 76 H168 M112 84 H132" stroke="#fff" stroke-opacity=".35"/>' +
+              '<path d="M86 74 Q100 79 116 74 Z" fill="#c8553d"/>' +
+              '<g fill="#23402f"><path d="M6 100 L15 60 L24 100 Z"/><path d="M19 100 L29 50 L39 100 Z"/>' +
+              '<path d="M35 100 L42 70 L49 100 Z"/></g>',
+            wav: (function () {
+              // Speech-like waveform: words (sin lobes) with short pauses between them.
+              var bars = "";
+              for (var i = 0; i < 46; i++) {
+                var h =
+                  3 +
+                  44 * Math.abs(Math.sin(i * 0.55)) * (0.55 + 0.45 * Math.abs(Math.sin(i * 1.7)));
+                bars +=
+                  '<rect x="' +
+                  (13 + i * 4) +
+                  '" y="' +
+                  (50 - h / 2) +
+                  '" width="2.4" height="' +
+                  h +
+                  '" rx="1.2"/>';
+              }
+              return '<g fill="currentColor">' + bars + "</g>";
+            })(),
+          };
           var FILES = [
-            ["Q3 roadmap", "pdf", "1.2 MB &middot; PDF", "linear-gradient(135deg,#ff8a7a,#e8465b)"],
-            [
-              "Launch film v4",
-              "mp4",
-              "2.4 GB &middot; Video",
-              "linear-gradient(135deg,#8f7bff,#4b3bd6)",
-            ],
-            [
-              "Pricing notes",
-              "md",
-              "18 KB &middot; Text",
-              "linear-gradient(135deg,#6fc3ff,#2f7de1)",
-            ],
-            [
-              "Team offsite",
-              "jpg",
-              "4.8 MB &middot; Image",
-              "linear-gradient(135deg,#7fe0a6,#1f9d6b)",
-            ],
-            [
-              "Launch film v4 copy",
-              "mp4",
-              "2.4 GB &middot; Video",
-              "linear-gradient(135deg,#8f7bff,#4b3bd6)",
-            ],
+            ["Q3 roadmap", "pdf", "1.2 MB &middot; PDF"],
+            ["Launch film v4", "mp4", "2.4 GB &middot; Video"],
+            ["Pricing notes", "md", "18 KB &middot; Text"],
+            ["Team offsite", "jpg", "4.8 MB &middot; Image"],
+            ["Voiceover final", "wav", "38 MB &middot; Audio"],
+            ["Launch film v4 copy", "mp4", "2.4 GB &middot; Video"],
           ];
           var TARGET = 1;
           var cards = FILES.map(function (f) {
             var card = document.createElement("div");
             card.className = "cm-file";
             card.innerHTML =
-              '<div class="cm-thumb" style="background:' +
-              f[3] +
-              '"></div>' +
+              '<div class="cm-thumb"><svg viewBox="0 0 206 100" preserveAspectRatio="xMidYMid slice">' +
+              THUMBS[f[1] === "mp4" ? "video" : f[1]] +
+              "</svg></div>" +
               '<div class="cm-name">' +
               f[0] +
               "." +
@@ -308,7 +373,7 @@
             grid.appendChild(card);
             return card;
           });
-          var copy = cards[4];
+          var copy = cards[5];
           var targetName = cards[TARGET].querySelector(".cm-name");
           var rows = labels.map(function (label, i) {
             if (i > 0 && i === labels.length - 1 && /trash|delete/i.test(label)) {
@@ -351,22 +416,21 @@
             return { x: x, y: y };
           }
 
-          var squeeze = Math.min(1, duration / 5.2);
+          var squeeze = Math.min(1, duration / 3.9);
           var T = {
-            glide: 0.85,
-            rclick: 0.95,
-            bloom: 1.02,
-            travel0: 1.45,
-            travel1: 2.1,
-            click: 2.25,
-            collapse: 2.43,
-            act: 2.55,
-            away0: 3.1,
-            away1: 3.7,
+            glide: 0.5,
+            rclick: 0.7,
+            bloom: 0.77,
+            travel0: 1.2,
+            travel1: 1.65,
+            click: 1.85,
+            collapse: 2.03,
+            act: 2.15,
+            away0: 2.75,
+            away1: 3.15,
           };
           for (var key in T) T[key] *= squeeze;
 
-          var glide = gsap.parseEase("power2.out");
           var bloomEase = gsap.parseEase("expo.out");
           var easeInOut = gsap.parseEase("power2.inOut");
           var easeOut = gsap.parseEase("power3.out");
@@ -419,12 +483,14 @@
               y: my + rows[pick].offsetTop + rows[pick].offsetHeight * 0.55,
             };
             var start = { x: -0.06 * W, y: 1.1 * H };
+            // Rest just below the window so the cursor never covers the result.
+            var win = grid.parentNode;
             var aside = {
               x: itemPoint.x + (left ? -1 : 1) * 160 * u,
-              y: Math.min(H - 60 * u, itemPoint.y + 180 * u),
+              y: Math.min(H - 80 * u, offsetIn(win).y + win.offsetHeight + 36 * u),
             };
             var p;
-            if (t < T.glide) p = lerp(start, anchor, glide(seg(t, 0, T.glide)));
+            if (t < T.glide) p = lerp(start, anchor, easeOut(seg(t, 0, T.glide)));
             else if (t < T.travel0) p = anchor;
             else if (t < T.travel1)
               p = lerp(anchor, itemPoint, easeInOut(seg(t, T.travel0, T.travel1)));
