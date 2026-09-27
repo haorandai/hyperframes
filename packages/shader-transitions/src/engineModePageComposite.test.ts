@@ -173,9 +173,13 @@ describe("page-side compositor scene copies", () => {
 
   // CSS animations the stylesheet gives an element ("::before glow" runs on its pseudo-element),
   // and the live times of those still running.
-  const CSS_ANIMATIONS: Record<string, string[]> = { stage: ["pulse", "intro", "::before glow"] };
+  const CSS_ANIMATIONS: Record<string, string[]> = {
+    stage: ["pulse", "intro", "::before glow", "::before pulse"],
+    scene: ["pulse"],
+  };
   const LIVE_TIMES: Record<string, Record<string, number>> = {
-    stage: { pulse: 400, "::before glow": 250 },
+    stage: { pulse: 400, "::before glow": 250, "::before pulse": 150 },
+    scene: { pulse: 900 },
   };
 
   class FakeAnimation {
@@ -360,10 +364,14 @@ describe("page-side compositor scene copies", () => {
     const { calls, composite } = installTransparentInsetFilm();
     await composite(1.2);
     const frame = calls.find((c) => c.op === "drawElementImage")?.args[0] as FakeEl;
-    const [pulse, intro, glow] = frame.children[0]!.children[0]!.animations;
+    const stage = frame.children[0]!.children[0]!;
+    const [pulse, intro, glow, pseudoPulse] = stage.animations;
     expect(pulse).toMatchObject({ animationName: "pulse", state: "paused", currentTime: 400 });
     expect(intro).toMatchObject({ animationName: "intro", state: "cancelled" });
     expect(glow).toMatchObject({ animationName: "glow", state: "paused", currentTime: 250 });
+    // The same name on the stage's ::before and on the scene keeps each one's own time.
+    expect(pseudoPulse).toMatchObject({ state: "paused", currentTime: 150 });
+    expect(stage.children[0]!.animations[0]).toMatchObject({ state: "paused", currentTime: 900 });
   });
 
   it("stages a scene directly under body in the full-frame box", async () => {
