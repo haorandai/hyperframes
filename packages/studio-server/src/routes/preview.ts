@@ -10,7 +10,8 @@ import {
   stripEmbeddedRuntimeScripts,
   type BundleOptions,
 } from "@hyperframes/core/compiler";
-import { STUDIO_PREVIEW_MARK_ATTR } from "@hyperframes/core/studio-preview-mark";
+import { STUDIO_PREVIEW_MARK_META } from "@hyperframes/core/studio-preview-mark";
+import { injectTagsAtHeadStart } from "@hyperframes/core/compiler/html-document";
 import { isWithinProjectRoot } from "@hyperframes/parsers/asset-resolution";
 import type { ResolvedProject, StudioApiAdapter } from "../types.js";
 import { resolveWithinProject } from "../helpers/safePath.js";
@@ -186,7 +187,7 @@ function injectStudioMotionScript(
   );
 }
 
-const GSAP_CDN_FALLBACK_SCRIPT = `<script ${STUDIO_PREVIEW_MARK_ATTR}>
+const GSAP_CDN_FALLBACK_SCRIPT = `<script data-hf-gsap-fallback>
 (function(){
   var cdnBase="https://cdn.jsdelivr.net/npm/gsap@${GSAP_CDN_VERSION}/dist/";
   var loaded={};
@@ -208,7 +209,7 @@ const GSAP_CDN_FALLBACK_SCRIPT = `<script ${STUDIO_PREVIEW_MARK_ATTR}>
 </script>`;
 
 function injectGsapCdnFallback(html: string): string {
-  if (html.includes(STUDIO_PREVIEW_MARK_ATTR)) return html;
+  if (html.includes("data-hf-gsap-fallback")) return html;
   if (html.includes("<head>")) return html.replace("<head>", "<head>" + GSAP_CDN_FALLBACK_SCRIPT);
   return GSAP_CDN_FALLBACK_SCRIPT + html;
 }
@@ -263,13 +264,14 @@ function injectStudioPreviewAugmentations(
   projectDir: string,
   activeCompositionPath: string,
 ): string {
+  const marked = injectTagsAtHeadStart(
+    lazyPreviewImages(html),
+    `<meta name="${STUDIO_PREVIEW_MARK_META}">`,
+  );
   return injectStudioMotionScript(
     injectMotionPathPluginIfNeeded(
       injectGsapCdnFallback(
-        injectProjectSignature(
-          lazyPreviewImages(html),
-          resolveProjectSignature(adapter, projectDir),
-        ),
+        injectProjectSignature(marked, resolveProjectSignature(adapter, projectDir)),
       ),
     ),
     projectDir,

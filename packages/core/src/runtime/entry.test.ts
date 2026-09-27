@@ -1,6 +1,7 @@
 // fallow-ignore-file code-duplication
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HF_COLOR_GRADING_ATTR, serializeHfColorGrading } from "../colorGrading";
+import { STUDIO_PREVIEW_MARK_META } from "../studioPreviewMark";
 import type { RuntimeTimelineLike } from "./types";
 
 function pausedTimeline(duration: number): RuntimeTimelineLike {
@@ -60,9 +61,9 @@ const withImage = <T extends HTMLElement>(clip: T): T => {
 };
 // What Studio's preview route serves at the head start; render and player documents never carry it.
 const servePreview = () =>
-  document.head
-    .appendChild(document.createElement("script"))
-    .setAttribute("data-hf-gsap-fallback", "");
+  document.head.appendChild(
+    Object.assign(document.createElement("meta"), { name: STUDIO_PREVIEW_MARK_META }),
+  );
 const neverDecodes = (clip: HTMLElement) => {
   withImage(clip).querySelector("img")!.decode = () => new Promise<void>(() => {});
   return clip;

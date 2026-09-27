@@ -1,1 +1,1 @@
-export const STUDIO_PREVIEW_MARK_ATTR = "data-hf-gsap-fallback";
+export const STUDIO_PREVIEW_MARK_META = "hyperframes-studio-preview";

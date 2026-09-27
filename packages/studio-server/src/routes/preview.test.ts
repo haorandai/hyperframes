@@ -19,7 +19,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ensureHfIds } from "@hyperframes/parsers/hf-ids";
-import { STUDIO_PREVIEW_MARK_ATTR } from "@hyperframes/core/studio-preview-mark";
+import { STUDIO_PREVIEW_MARK_META } from "@hyperframes/core/studio-preview-mark";
 import { PREVIEW_BUNDLE_OPTIONS, registerPreviewRoutes } from "./preview";
 import { registerFileRoutes } from "./files";
 import { createPreviewDocumentStore } from "../helpers/previewDocumentStore";
@@ -114,9 +114,10 @@ describe("registerPreviewRoutes", () => {
     const app = new Hono();
     registerPreviewRoutes(app, createAdapter(projectDir));
     const html = await (await app.request("http://localhost/projects/demo/preview")).text();
-    const mark = html.indexOf(`<script ${STUDIO_PREVIEW_MARK_ATTR}`);
+    const mark = html.indexOf(`<meta name="${STUDIO_PREVIEW_MARK_META}">`);
     expect(mark).toBeGreaterThan(-1);
     expect(mark).toBeLessThan(html.indexOf("/api/runtime.js"));
+    expect(html).toContain("<script data-hf-gsap-fallback>");
   });
 
   it("injects Studio GSAP motion manifest runtime into project preview", async () => {
