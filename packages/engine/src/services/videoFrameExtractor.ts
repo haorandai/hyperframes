@@ -913,9 +913,13 @@ export async function extractVideoFramesRange(
     vfFilters.push("format=nv12");
   }
   if (sampleCfrAtOutputFps) {
-    // Each slot takes the last frame starting at or before its time. The half-tick shift keeps
-    // frames whose timestamp the container rounded up (WebM/MKV store whole ms) in their own slot.
-    vfFilters.push("settb=intb/2", "setpts=PTS-1", `fps=${ffmpegFps}:start_time=0:round=up`);
+    // Each slot takes the last frame starting at or before its time. On timebases of 2 ms or finer a
+    // half-tick shift absorbs container rounding (WebM/MKV store whole ms); coarser ones are exact.
+    vfFilters.push(
+      "settb=intb/2",
+      "setpts=PTS-lte(TB\\,0.001)",
+      `fps=${ffmpegFps}:start_time=0:round=up`,
+    );
   }
   if (options.sdrToHdrTransfer) {
     // Ordering intent: fps sampling runs BEFORE the colorspace remap so only

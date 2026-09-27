@@ -1791,13 +1791,22 @@ describe.skipIf(!HAS_FFMPEG)("frame sampling at the output frame rate", () => {
   const FIXTURE_DIR = mkdtempSync(join(tmpdir(), "hf-video-frame-sampling-"));
   const WIDTH = 32;
   const HEIGHT = 16;
-  // Matroska stores whole-millisecond timestamps, so a 30 fps frame at 66.67 ms reads 67 ms.
-  const SOURCES = { mp4: 60, mkv: 30 } as const;
-  const sourcePath = (container: keyof typeof SOURCES) =>
-    join(FIXTURE_DIR, `index-${SOURCES[container]}fps.${container}`);
+  // Matroska stores whole-millisecond timestamps (a 30 fps frame at 66.67 ms reads 67 ms);
+  // a 1/30 timescale stores each frame exactly on a coarse tick.
+  const SOURCES = {
+    "mp4-60": { fps: 60, file: "index-60fps.mp4", muxer: [] },
+    "mkv-30": { fps: 30, file: "index-30fps.mkv", muxer: [] },
+    "mp4-30-timescale-30": {
+      fps: 30,
+      file: "index-30fps-ts30.mp4",
+      muxer: ["-video_track_timescale", "30"],
+    },
+  } as const;
+  type SourceName = keyof typeof SOURCES;
+  const sourcePath = (name: SourceName) => join(FIXTURE_DIR, SOURCES[name].file);
 
   beforeAll(async () => {
-    for (const container of Object.keys(SOURCES) as Array<keyof typeof SOURCES>) {
+    for (const name of Object.keys(SOURCES) as SourceName[]) {
       // Frame k carries luma 16 + 2k, so each extracted frame names its source index.
       const result = await runFfmpeg([
         "-y",
@@ -1807,14 +1816,15 @@ describe.skipIf(!HAS_FFMPEG)("frame sampling at the output frame rate", () => {
         "-f",
         "lavfi",
         "-i",
-        `nullsrc=s=${WIDTH}x${HEIGHT}:r=${SOURCES[container]}:d=1.5,geq=lum='16+2*N':cb=128:cr=128`,
+        `nullsrc=s=${WIDTH}x${HEIGHT}:r=${SOURCES[name].fps}:d=1.5,geq=lum='16+2*N':cb=128:cr=128`,
         "-c:v",
         "libx264",
         "-qp",
         "0",
         "-pix_fmt",
         "yuv420p",
-        sourcePath(container),
+        ...SOURCES[name].muxer,
+        sourcePath(name),
       ]);
       if (!result.success) throw new Error(`index fixture synthesis failed: ${result.stderr}`);
     }
@@ -1845,21 +1855,22 @@ describe.skipIf(!HAS_FFMPEG)("frame sampling at the output frame rate", () => {
   }
 
   it.each([
-    { container: "mp4", fps: 24, startTime: 0, duration: 0.5 },
-    { container: "mp4", fps: 10, startTime: 0.37, duration: 0.6 },
-    { container: "mkv", fps: 30, startTime: 0, duration: 0.5 },
+    { source: "mp4-60", fps: 24, startTime: 0, duration: 0.5 },
+    { source: "mp4-60", fps: 10, startTime: 0.37, duration: 0.6 },
+    { source: "mkv-30", fps: 30, startTime: 0, duration: 0.5 },
+    { source: "mp4-30-timescale-30", fps: 60, startTime: 0, duration: 0.5 },
   ] as const)(
-    "$container: samples the frame on screen at each $fps fps slot from $startTime s",
+    "$source: samples the frame on screen at each $fps fps slot from $startTime s",
     async (c) => {
       const extracted = await extractVideoFramesRange(
-        sourcePath(c.container),
-        `${c.container}-${c.fps}`,
+        sourcePath(c.source),
+        `${c.source}-${c.fps}`,
         c.startTime,
         c.duration,
         { fps: c.fps, outputDir: FIXTURE_DIR, format: "png" },
       );
       const onScreen = Array.from({ length: Math.round(c.duration * c.fps) }, (_, i) =>
-        Math.floor((c.startTime + i / c.fps) * SOURCES[c.container] + 1e-9),
+        Math.floor((c.startTime + i / c.fps) * SOURCES[c.source].fps + 1e-9),
       );
       expect(sourceIndexes(extracted)).toEqual(onScreen);
     },
