@@ -236,7 +236,7 @@ describe("page-side compositor scene copies", () => {
         return Reflect.get(target, key);
       },
     });
-    const canvases: Array<{ style: Record<string, string> }> = [];
+    const canvases: Array<{ id?: string; style: Record<string, string> }> = [];
     const createCanvas = () => {
       const index = canvases.length;
       const children: FakeEl[] = [];
@@ -252,8 +252,8 @@ describe("page-side compositor scene copies", () => {
         clearRect: record("clearRect"),
         drawElementImage: record("drawElementImage"),
       };
-      const canvas = {
-        style: {} as Record<string, string>,
+      const canvas: { id?: string; style: Record<string, string>; [key: string]: unknown } = {
+        style: {},
         width: 0,
         height: 0,
         layoutSubtree: true,
@@ -312,10 +312,7 @@ describe("page-side compositor scene copies", () => {
       await (win.__hf_page_composite_prepare as () => Promise<boolean>)();
       return (win.__hf_page_composite_resolve as () => boolean)();
     };
-    const overlay = () =>
-      canvases.find((c) => c.style.cssText?.includes("2147483646")) as {
-        style: Record<string, string>;
-      };
+    const overlay = () => canvases.find((c) => c.id === PAGE_COMPOSITOR_CANVAS_ID)!;
     return { calls, composite, overlay };
   }
 

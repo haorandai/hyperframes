@@ -304,12 +304,7 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
       // otherwise collapse to 0x0 inside the staging canvas and blank the texture.
       const { root, liveRoot } = stageWithAncestors(live, clone);
       const rect = liveRoot.getBoundingClientRect();
-      const pin = clonePinStyleFor(rect);
-      root.style.position = "absolute";
-      root.style.left = pin.left;
-      root.style.top = pin.top;
-      root.style.width = pin.width;
-      root.style.height = pin.height;
+      Object.assign(root.style, { position: "absolute", ...clonePinStyleFor(rect) });
       staging.appendChild(root);
       rects.push(rect);
     }
