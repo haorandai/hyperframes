@@ -229,7 +229,6 @@ function findDocumentTag(html: string, tag: DocumentTag): number {
   return -1;
 }
 
-// Template content is left out, as querySelectorAll leaves it out of the document.
 export function findStartTags(html: string, name: string): number[] {
   const lowered = lowerAscii(html);
   const token = `<${lowerAscii(name)}`;
