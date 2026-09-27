@@ -20,8 +20,8 @@
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { _clearGoogleFontCssCacheForTests } from "./deterministicFonts.js";
 
@@ -29,17 +29,23 @@ beforeEach(() => _clearGoogleFontCssCacheForTests());
 
 let cacheDir: string;
 let prevCacheEnv: string | undefined;
+const LOCAL_FONT_DIR = join(homedir(), ".local", "share", "fonts");
+const LOCAL_FONT_FILE = join(LOCAL_FONT_DIR, "hf-authored-fail-test.woff2");
+const LOCAL_FONT_BYTES = "LOCAL_ONLY_BYTES";
 
 beforeAll(() => {
   prevCacheEnv = process.env.HYPERFRAMES_FONT_CACHE_DIR;
   cacheDir = mkdtempSync(join(tmpdir(), "hf-font-cache-"));
   process.env.HYPERFRAMES_FONT_CACHE_DIR = cacheDir;
+  mkdirSync(LOCAL_FONT_DIR, { recursive: true });
+  writeFileSync(LOCAL_FONT_FILE, LOCAL_FONT_BYTES);
 });
 
 afterAll(() => {
   if (prevCacheEnv === undefined) delete process.env.HYPERFRAMES_FONT_CACHE_DIR;
   else process.env.HYPERFRAMES_FONT_CACHE_DIR = prevCacheEnv;
   rmSync(cacheDir, { recursive: true, force: true });
+  rmSync(LOCAL_FONT_FILE, { force: true });
 });
 
 const VIET_RANGE = "U+0102-0103, U+1EA0-1EF9, U+20AB";
@@ -140,12 +146,16 @@ function authoredPage(head: string): string {
   return `<!doctype html><html><head>${head}</head><body><h1>Seconds</h1></body></html>`;
 }
 
+function isAuthoredRequest(url: string, href: string): boolean {
+  return url === href || url.startsWith(`${href}&text=`);
+}
+
 function authoredFetch(cssStatus: number): { fetchImpl: typeof fetch; urls: string[] } {
   const urls: string[] = [];
   const fetchImpl = (async (input: unknown) => {
     const url = String(input);
     urls.push(url);
-    if (url === AUTHORED_HREF)
+    if (isAuthoredRequest(url, AUTHORED_HREF))
       return new Response(cssStatus === 200 ? AUTHORED_CSS : "", { status: cssStatus });
     if (url.includes("family=Fraunces:ital,wght@")) {
       return new Response(
@@ -180,9 +190,10 @@ describe("authored Google font stylesheet", () => {
       { fetchImpl, allowSystemFontCapture: false },
     );
 
-    expect(urls.filter((url) => url.startsWith("https://fonts.googleapis.com/"))).toEqual([
-      AUTHORED_HREF,
-    ]);
+    const cssUrls = urls.filter((url) => url.startsWith("https://fonts.googleapis.com/"));
+    expect(cssUrls).toHaveLength(1);
+    expect(cssUrls[0]?.startsWith(`${AUTHORED_HREF}&text=`)).toBe(true);
+    expect(new URL(cssUrls[0] ?? "").searchParams.get("text") ?? "").toContain("S");
     expect(result).toContain(b64("FRAUNCES_LINKED"));
     expect(result).toContain(b64("NUNITO_LINKED"));
     expect(result).not.toContain(b64("FRAUNCES_WIDE"));
@@ -223,6 +234,50 @@ describe("authored Google font stylesheet", () => {
     expect(result).toContain(b64("FRAUNCES_WIDE"));
   });
 
+  it("keeps a 400 900 weight span on every embedded subset", async () => {
+    const href =
+      "https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900&display=swap";
+    const latin = "https://fonts.gstatic.com/s/bodonimoda/latin.woff2";
+    const latinExt = "https://fonts.gstatic.com/s/bodonimoda/latin-ext.woff2";
+    const urls: string[] = [];
+    const fetchImpl = (async (input: unknown) => {
+      const url = String(input);
+      urls.push(url);
+      if (isAuthoredRequest(url, href)) {
+        return new Response(
+          `@font-face { font-family: 'Bodoni Moda'; font-style: normal; font-weight: 400 900; src: url(${latinExt}) format('woff2'); unicode-range: U+0100-02BA; }
+@font-face { font-family: 'Bodoni Moda'; font-style: normal; font-weight: 400 900; src: url(${latin}) format('woff2'); unicode-range: U+0000-00FF; }`,
+          { status: 200 },
+        );
+      }
+      if (url === latin) return new Response("BODONI_LATIN", { status: 200 });
+      if (url === latinExt) return new Response("BODONI_LATIN_EXT", { status: 200 });
+      return new Response("", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const { injectDeterministicFontFaces } = await import("./deterministicFonts.js");
+    const result = await injectDeterministicFontFaces(
+      authoredPage(
+        `<link rel="stylesheet" href="${href}"><style>h1 { font-family: "Bodoni Moda", serif; font-weight: 700; }</style>`,
+      ),
+      { fetchImpl, allowSystemFontCapture: false },
+    );
+
+    const cssUrls = urls.filter((url) => url.startsWith("https://fonts.googleapis.com/"));
+    expect(cssUrls).toHaveLength(1);
+    expect(cssUrls[0]?.startsWith(`${href}&text=`)).toBe(true);
+    const faces = result
+      .split("@font-face")
+      .slice(1)
+      .filter((block) => block.includes('font-family: "Bodoni Moda"'));
+    expect(faces).toHaveLength(2);
+    for (const face of faces) {
+      expect(face).toContain("font-weight: 400 900;");
+    }
+    expect(result).toContain(b64("BODONI_LATIN"));
+    expect(result).toContain(b64("BODONI_LATIN_EXT"));
+  });
+
   it("still embeds Inter for Arial when the page links Arial", async () => {
     const { injectDeterministicFontFaces } = await import("./deterministicFonts.js");
     const { fetchImpl, urls } = authoredFetch(200);
@@ -236,5 +291,175 @@ describe("authored Google font stylesheet", () => {
 
     expect(urls.some((url) => url.includes("family=Arial"))).toBe(false);
     expect(urls.some((url) => url.includes("family=Inter:"))).toBe(true);
+  });
+
+  it("embeds the Google file named by an import, not the weight-only file", async () => {
+    const { injectDeterministicFontFaces } = await import("./deterministicFonts.js");
+    const { fetchImpl, urls } = authoredFetch(200);
+    const result = await injectDeterministicFontFaces(
+      authoredPage(
+        `<style>@import url("${AUTHORED_HREF}"); h1 { font-family: "Fraunces", serif; }</style>`,
+      ),
+      { fetchImpl, allowSystemFontCapture: false },
+    );
+
+    const cssUrls = urls.filter((url) => url.startsWith("https://fonts.googleapis.com/"));
+    expect(cssUrls.some((url) => url.startsWith(`${AUTHORED_HREF}&text=`))).toBe(true);
+    expect(cssUrls.some((url) => url.includes("ital,wght@"))).toBe(false);
+    expect(result).toContain(b64("FRAUNCES_LINKED"));
+    expect(result).not.toContain(b64("FRAUNCES_WIDE"));
+  });
+
+  it("uses a later link when it names a weight range and the first does not", async () => {
+    const narrow = "https://fonts.googleapis.com/css2?family=Bodoni+Moda:wght@400&display=swap";
+    const wide =
+      "https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900&display=swap";
+    const file = "https://fonts.gstatic.com/s/bodonimoda/range.woff2";
+    const urls: string[] = [];
+    const fetchImpl = (async (input: unknown) => {
+      const url = String(input);
+      urls.push(url);
+      if (isAuthoredRequest(url, wide)) {
+        return new Response(
+          `@font-face { font-family: 'Bodoni Moda'; font-style: normal; font-weight: 400 900; src: url(${file}) format('woff2'); unicode-range: U+0000-00FF; }`,
+          { status: 200 },
+        );
+      }
+      if (url === file) return new Response("BODONI_RANGE", { status: 200 });
+      return new Response("", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const { injectDeterministicFontFaces } = await import("./deterministicFonts.js");
+    const result = await injectDeterministicFontFaces(
+      authoredPage(
+        `<link rel="stylesheet" href="${narrow}">` +
+          `<link rel="stylesheet" href="${wide}">` +
+          `<style>h1 { font-family: "Bodoni Moda", serif; font-weight: 700; }</style>`,
+      ),
+      { fetchImpl, allowSystemFontCapture: false },
+    );
+
+    const cssUrls = urls.filter((url) => url.startsWith("https://fonts.googleapis.com/"));
+    expect(cssUrls).toHaveLength(1);
+    expect(cssUrls[0]?.startsWith(`${wide}&text=`)).toBe(true);
+    expect(result).toContain("font-weight: 400 900;");
+    expect(result).toContain(b64("BODONI_RANGE"));
+  });
+
+  it("keeps the first link when a later one names fewer ranges", async () => {
+    const wide =
+      "https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900&display=swap";
+    const narrow = "https://fonts.googleapis.com/css2?family=Bodoni+Moda:wght@400&display=swap";
+    const file = "https://fonts.gstatic.com/s/bodonimoda/first-range.woff2";
+    const urls: string[] = [];
+    const fetchImpl = (async (input: unknown) => {
+      const url = String(input);
+      urls.push(url);
+      if (isAuthoredRequest(url, wide)) {
+        return new Response(
+          `@font-face { font-family: 'Bodoni Moda'; font-style: normal; font-weight: 400 900; src: url(${file}) format('woff2'); unicode-range: U+0000-00FF; }`,
+          { status: 200 },
+        );
+      }
+      return new Response("", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const { injectDeterministicFontFaces } = await import("./deterministicFonts.js");
+    await injectDeterministicFontFaces(
+      authoredPage(
+        `<link rel="stylesheet" href="${wide}">` +
+          `<link rel="stylesheet" href="${narrow}">` +
+          `<style>h1 { font-family: "Bodoni Moda", serif; }</style>`,
+      ),
+      { fetchImpl, allowSystemFontCapture: false },
+    );
+
+    const cssUrls = urls.filter((url) => url.startsWith("https://fonts.googleapis.com/"));
+    expect(cssUrls).toHaveLength(1);
+    expect(cssUrls[0]?.startsWith(`${wide}&text=`)).toBe(true);
+  });
+
+  it("leaves a link's own text list unchanged", async () => {
+    const href = "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500&text=Hi";
+    const urls: string[] = [];
+    const fetchImpl = (async (input: unknown) => {
+      const url = String(input);
+      urls.push(url);
+      if (url === href) {
+        return new Response(
+          `@font-face { font-family: 'Fraunces'; font-style: normal; font-weight: 500; src: url(${FRAUNCES_FILE}) format('woff2'); unicode-range: U+0000-00FF; }`,
+          { status: 200 },
+        );
+      }
+      if (url === FRAUNCES_FILE) return new Response("FRAUNCES_LINKED", { status: 200 });
+      return new Response("", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const { injectDeterministicFontFaces } = await import("./deterministicFonts.js");
+    await injectDeterministicFontFaces(
+      authoredPage(
+        `<link rel="stylesheet" href="${href}"><style>h1 { font-family: "Fraunces", serif; }</style>`,
+      ),
+      { fetchImpl, allowSystemFontCapture: false },
+    );
+
+    expect(urls.filter((url) => url.startsWith("https://fonts.googleapis.com/"))).toEqual([href]);
+  });
+
+  it("does not append page text when the character set does not fit on the font URL", async () => {
+    const href = "https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400";
+    const file = "https://fonts.gstatic.com/s/notosansjp/full.woff2";
+    const many = Array.from({ length: 600 }, (_, i) => String.fromCodePoint(0x4e00 + i)).join("");
+    const urls: string[] = [];
+    const fetchImpl = (async (input: unknown) => {
+      const url = String(input);
+      urls.push(url);
+      if (url === href) {
+        return new Response(
+          `@font-face { font-family: 'Noto Sans JP'; font-style: normal; font-weight: 400; src: url(${file}) format('woff2'); unicode-range: U+3000-30FF; }`,
+          { status: 200 },
+        );
+      }
+      if (url === file) return new Response("NOTO_FULL", { status: 200 });
+      return new Response("", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    const { injectDeterministicFontFaces } = await import("./deterministicFonts.js");
+    await injectDeterministicFontFaces(
+      `<!doctype html><html><head><link rel="stylesheet" href="${href}"><style>p { font-family: "Noto Sans JP", sans-serif; }</style></head><body>${many}</body></html>`,
+      { fetchImpl, allowSystemFontCapture: false },
+    );
+
+    expect(urls.filter((url) => url.startsWith("https://fonts.googleapis.com/"))).toEqual([href]);
+  });
+
+  it("does not embed a local file when the page's link failed", async () => {
+    const href = "https://fonts.googleapis.com/css2?family=Hf+Authored+Fail+Test";
+    const { injectDeterministicFontFaces } = await import("./deterministicFonts.js");
+    const urls: string[] = [];
+    const fetchImpl = (async (input: unknown) => {
+      urls.push(String(input));
+      return new Response("", { status: 400 });
+    }) as unknown as typeof fetch;
+    const result = await injectDeterministicFontFaces(
+      authoredPage(
+        `<link rel="stylesheet" href="${href}"><style>h1 { font-family: "Hf Authored Fail Test", serif; }</style>`,
+      ),
+      { fetchImpl, allowSystemFontCapture: true },
+    );
+
+    expect(urls.some((url) => url.includes("ital,wght@"))).toBe(false);
+    expect(result).not.toContain(b64(LOCAL_FONT_BYTES));
+  });
+
+  it("still embeds a local file when the page has no Google link", async () => {
+    const { injectDeterministicFontFaces } = await import("./deterministicFonts.js");
+    const fetchImpl = (async () => new Response("", { status: 400 })) as unknown as typeof fetch;
+    const result = await injectDeterministicFontFaces(
+      authoredPage(`<style>h1 { font-family: "Hf Authored Fail Test", serif; }</style>`),
+      { fetchImpl, allowSystemFontCapture: true },
+    );
+
+    expect(result).toContain(b64(LOCAL_FONT_BYTES));
   });
 });

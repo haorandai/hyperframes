@@ -700,8 +700,9 @@ async function buildFontFaceCss(
       continue;
     }
 
-    // Path 3: locate font on the local filesystem, compress, and embed.
-    if (options.allowSystemFontCapture) {
+    // The page already named the file. A font found on this machine is a
+    // different file, and the render machines do not have it.
+    if (options.allowSystemFontCapture && !pageNamedThisFile(originalCaseFamily, options)) {
       const variants = locateSystemFontVariants(originalCaseFamily);
       if (variants.length > 0) {
         let totalBytes = 0;
@@ -1200,18 +1201,72 @@ function googleStylesheetFamilies(urlText: string): string[] {
   return names;
 }
 
-/** First Google stylesheet in the page that names each family. Later links do not replace it. */
+function cssImportUrls(css: string): string[] {
+  const urls: string[] = [];
+  const pattern = /@import\s+(?:url\(\s*['"]?([^'")\s]+)['"]?\s*\)|['"]([^'"]+)['"])/gi;
+  for (const match of css.matchAll(pattern)) {
+    const url = match[1] ?? match[2];
+    if (url) urls.push(url);
+  }
+  return urls;
+}
+
+function axisRangeScore(urlText: string, familyName: string): number {
+  let parsed: URL;
+  try {
+    parsed = new URL(urlText);
+  } catch {
+    return 0;
+  }
+  const wanted = normalizeFamilyName(familyName);
+  let score = 0;
+  for (const raw of parsed.searchParams.getAll("family")) {
+    const name = raw.split(":")[0]?.trim() ?? "";
+    if (normalizeFamilyName(name) !== wanted) continue;
+    score = Math.max(score, raw.match(/\.\./g)?.length ?? 0);
+  }
+  return score;
+}
+
+function rememberGoogleStylesheet(byFamily: Map<string, string>, urlText: string): void {
+  for (const name of googleStylesheetFamilies(urlText)) {
+    const key = normalizeFamilyName(name);
+    const existing = byFamily.get(key);
+    if (existing && axisRangeScore(urlText, name) <= axisRangeScore(existing, name)) continue;
+    byFamily.set(key, urlText);
+  }
+}
+
+/**
+ * Google stylesheet for each family, in document order, including `@import`.
+ * A later URL replaces an earlier one only when it names more axis ranges,
+ * so `wght@400` does not hide a following `400..900`.
+ */
 function authoredGoogleFontStylesheetByFamily(html: string): Map<string, string> {
   const byFamily = new Map<string, string>();
-  for (const tag of html.matchAll(/<link\b[^>]*>/gi)) {
-    const urlText = stylesheetHref(tag[0]);
-    if (!urlText) continue;
-    for (const name of googleStylesheetFamilies(urlText)) {
-      const key = normalizeFamilyName(name);
-      if (!byFamily.has(key)) byFamily.set(key, urlText);
+  const markup = /<link\b[^>]*>|<style\b[^>]*>([\s\S]*?)<\/style>/gi;
+  for (const match of html.matchAll(markup)) {
+    const tag = match[0];
+    if (/^<link\b/i.test(tag)) {
+      const urlText = stylesheetHref(tag);
+      if (urlText) rememberGoogleStylesheet(byFamily, urlText);
+      continue;
+    }
+    for (const urlText of cssImportUrls(match[1] ?? "")) {
+      rememberGoogleStylesheet(byFamily, urlText);
     }
   }
   return byFamily;
+}
+
+function withPageText(url: string, fontText: string | undefined): string {
+  if (!fontText || /[?&]text=/.test(url)) return url;
+  const joiner = url.includes("?") ? "&" : "?";
+  return `${url}${joiner}text=${encodeURIComponent(fontText)}`;
+}
+
+function pageNamedThisFile(familyName: string, options: InternalFontFetchOptions): boolean {
+  return options.authoredStylesheets.has(normalizeFamilyName(familyName.replace(/\+/g, " ")));
 }
 
 function declaredFaceFamily(block: string): string | undefined {
@@ -1238,9 +1293,11 @@ async function fetchGoogleFont(
   // and the embedded face is written after the link, so the wider file wins.
   // A failed download stays failed instead of fetching a different file.
   const authoredStylesheet = options.authoredStylesheets.get(normalizeFamilyName(googleFamilyName));
-  const url =
-    authoredStylesheet ??
-    `https://fonts.googleapis.com/css2?family=${encodedFamily}:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700${textParam}`;
+  // `text=` asks Google for only the characters on the page. A CJK family
+  // without it is a hundred files, and the compile's font budget is 20s.
+  const url = authoredStylesheet
+    ? withPageText(authoredStylesheet, fontText)
+    : `https://fonts.googleapis.com/css2?family=${encodedFamily}:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700${textParam}`;
 
   let cssText: string;
   try {
@@ -1273,14 +1330,16 @@ async function fetchGoogleFont(
   // capture grabs each face's `unicode-range` (Google emits it after `src`)
   // so the injected face only claims the codepoints the subset actually
   // covers — without it the face would advertise full coverage it lacks.
+  // A variable face is `font-weight: 400 900`: one file for every weight in
+  // the span. Keeping only the first number leaves 600/700/800 on the network.
   const faceRegex =
-    /@font-face\s*\{[^}]*font-style:\s*(normal|italic)[^}]*font-weight:\s*(\d+)[^}]*src:\s*url\(([^)]+)\)\s*format\(['"]woff2['"]\)(?:[^}]*?unicode-range:\s*([^;}]+))?[^}]*\}/gi;
+    /@font-face\s*\{[^}]*font-style:\s*(normal|italic)[^}]*font-weight:\s*(\d+(?:\s+\d+)?)[^}]*src:\s*url\(([^)]+)\)\s*format\(['"]woff2['"]\)(?:[^}]*?unicode-range:\s*([^;}]+))?[^}]*\}/gi;
 
   const faces: GoogleFontFace[] = [];
 
   for (const match of cssText.matchAll(faceRegex)) {
     const style = match[1] || "normal";
-    const weight = match[2] || "400";
+    const weight = (match[2] || "400").replace(/\s+/g, " ");
     const woff2Url = match[3] || "";
     const unicodeRange = match[4]?.trim() || undefined;
     const declared = declaredFaceFamily(match[0]);
