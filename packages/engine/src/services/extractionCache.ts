@@ -67,7 +67,7 @@ export const GC_MARKER = ".hf-last-gc";
  * a JavaScript number. This invalidates entries created after rational NTSC
  * rates had already been rounded to a decimal.
  * v4 -> v5: each CFR slot samples the frame on screen at its time instead of
- * the last frame ffmpeg rounds into it, changing frames below the source fps.
+ * the last frame ffmpeg rounds into it, changing frames at most output rates.
  */
 export const SCHEMA_PREFIX = "hfcache-v5-";
 

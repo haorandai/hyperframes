@@ -1786,34 +1786,38 @@ describe.skipIf(!HAS_FFMPEG)("video frame extraction format", () => {
   }, 60_000);
 });
 
-// A seeked <video> shows the last frame at or before the seek time; renders must sample the same one.
-describe.skipIf(!HAS_FFMPEG)("frame sampling below the source frame rate", () => {
+// Each output slot shows the frame on screen at its time, as the preview does.
+describe.skipIf(!HAS_FFMPEG)("frame sampling at the output frame rate", () => {
   const FIXTURE_DIR = mkdtempSync(join(tmpdir(), "hf-video-frame-sampling-"));
-  const SOURCE = join(FIXTURE_DIR, "index-60fps.mp4");
-  const SOURCE_FPS = 60;
   const WIDTH = 32;
   const HEIGHT = 16;
+  // Matroska stores whole-millisecond timestamps, so a 30 fps frame at 66.67 ms reads 67 ms.
+  const SOURCES = { mp4: 60, mkv: 30 } as const;
+  const sourcePath = (container: keyof typeof SOURCES) =>
+    join(FIXTURE_DIR, `index-${SOURCES[container]}fps.${container}`);
 
   beforeAll(async () => {
-    // Frame k carries luma 16 + 2k, so each extracted frame names its source index.
-    const result = await runFfmpeg([
-      "-y",
-      "-hide_banner",
-      "-loglevel",
-      "error",
-      "-f",
-      "lavfi",
-      "-i",
-      `nullsrc=s=${WIDTH}x${HEIGHT}:r=${SOURCE_FPS}:d=1.5,geq=lum='16+2*N':cb=128:cr=128`,
-      "-c:v",
-      "libx264",
-      "-qp",
-      "0",
-      "-pix_fmt",
-      "yuv420p",
-      SOURCE,
-    ]);
-    if (!result.success) throw new Error(`index fixture synthesis failed: ${result.stderr}`);
+    for (const container of Object.keys(SOURCES) as Array<keyof typeof SOURCES>) {
+      // Frame k carries luma 16 + 2k, so each extracted frame names its source index.
+      const result = await runFfmpeg([
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        `nullsrc=s=${WIDTH}x${HEIGHT}:r=${SOURCES[container]}:d=1.5,geq=lum='16+2*N':cb=128:cr=128`,
+        "-c:v",
+        "libx264",
+        "-qp",
+        "0",
+        "-pix_fmt",
+        "yuv420p",
+        sourcePath(container),
+      ]);
+      if (!result.success) throw new Error(`index fixture synthesis failed: ${result.stderr}`);
+    }
   }, 30_000);
 
   afterAll(() => {
@@ -1841,24 +1845,21 @@ describe.skipIf(!HAS_FFMPEG)("frame sampling below the source frame rate", () =>
   }
 
   it.each([
-    { fps: 24, startTime: 0, duration: 0.5 },
-    { fps: 10, startTime: 0.37, duration: 0.6 },
-  ])(
-    "samples the frame on screen at each $fps fps slot from $startTime s",
+    { container: "mp4", fps: 24, startTime: 0, duration: 0.5 },
+    { container: "mp4", fps: 10, startTime: 0.37, duration: 0.6 },
+    { container: "mkv", fps: 30, startTime: 0, duration: 0.5 },
+  ] as const)(
+    "$container: samples the frame on screen at each $fps fps slot from $startTime s",
     async (c) => {
       const extracted = await extractVideoFramesRange(
-        SOURCE,
-        `s${c.fps}`,
+        sourcePath(c.container),
+        `${c.container}-${c.fps}`,
         c.startTime,
         c.duration,
-        {
-          fps: c.fps,
-          outputDir: FIXTURE_DIR,
-          format: "png",
-        },
+        { fps: c.fps, outputDir: FIXTURE_DIR, format: "png" },
       );
       const onScreen = Array.from({ length: Math.round(c.duration * c.fps) }, (_, i) =>
-        Math.floor((c.startTime + i / c.fps) * SOURCE_FPS + 1e-9),
+        Math.floor((c.startTime + i / c.fps) * SOURCES[c.container] + 1e-9),
       );
       expect(sourceIndexes(extracted)).toEqual(onScreen);
     },
