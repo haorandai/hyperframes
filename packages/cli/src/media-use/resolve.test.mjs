@@ -756,7 +756,7 @@ test("--analyze refuses a HYPERFRAMES_FFPROBE_PATH that cannot run instead of re
   );
 });
 
-test("--doctor names a configured ffprobe that exists but does not run", () => {
+test("--doctor fails a configured ffprobe that exists but exits with an error", () => {
   const dir = mkdtempSync(join(tmpdir(), "mu-doctor-bad-ff-"));
   const broken = join(dir, "ffprobe");
   writeFileSync(broken, "#!/bin/sh\nexit 3\n");
@@ -768,11 +768,30 @@ test("--doctor names a configured ffprobe that exists but does not run", () => {
     const check = JSON.parse(result.stdout.trim()).checks.find((c) => c.name === "ffprobe on PATH");
     assert.deepEqual(
       [check.ok, check.detail, check.fix],
-      [false, `"${broken}" did not run`, "fix or unset the variable that names it"],
+      [
+        false,
+        `HYPERFRAMES_FFPROBE_PATH names "${broken}", which cannot run: fix it or unset it.`,
+        "fix or unset that variable",
+      ],
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("a broken HYPERFRAMES_FFPROBE_PATH is named when local voice cannot run, not a generic miss", () => {
+  setup();
+  const missing = join(tmp, "no-ffprobe");
+  const result = spawnResolve(
+    ["--type", "voice", "--intent", "hello", "--provider", "kokoro.local", "--project", tmp, "--json"],
+    { env: { HYPERFRAMES_FFPROBE_PATH: missing } },
+  );
+  assert.equal(result.status, 1);
+  assert.equal(
+    JSON.parse(result.stdout.trim()).error,
+    `HYPERFRAMES_FFPROBE_PATH names "${missing}", which cannot run: fix it or unset it.`,
+  );
+  cleanup();
 });
 
 test("one-line output format matches contract", () => {

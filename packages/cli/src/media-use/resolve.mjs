@@ -33,7 +33,7 @@ import { heygenAuthMethod } from "../audio/scripts/lib/heygen.mjs";
 import { buildCube, paramsFromIntent } from "./lib/cube-build.mjs";
 import { validateCubeFile } from "./lib/cube-validate.mjs";
 import { analyzeMediaGrade, formatMeasuredNote } from "./lib/grade-analyzer.mjs";
-import { ffmpegBinary, ffprobeBinary } from "./lib/ff-binaries.mjs";
+import { FfBinarySettingError, ffmpegBinary, ffprobeBinary } from "./lib/ff-binaries.mjs";
 import {
   freezeLibraryLut,
   isLibraryLutOfflineMiss,
@@ -517,7 +517,8 @@ async function run() {
     // brand stays local: no frame.md/design.md -> upsell the HyperFrames design
     // flow rather than reporting a generic miss (B5).
     const msg =
-      providerFailure instanceof BundledSfxAssetsError
+      providerFailure instanceof BundledSfxAssetsError ||
+      providerFailure instanceof FfBinarySettingError
         ? providerFailure.message
         : type === "brand"
           ? "no brand spec found — add a frame.md or design.md (colors/font/logo) to this project. Run the HyperFrames design flow to create one; brand tokens are read locally for deterministic rendering."
@@ -1156,15 +1157,12 @@ function ffDoctorCheck(name, binary) {
     };
   }
   const probe = runCommand(bin, ["-version"]);
-  if (probe.status === 0) {
-    return { name: `${name} on PATH`, ok: true, detail: firstLine(probe.stdout), fix: "" };
-  }
-  const configured = bin !== name;
+  const ok = probe.status === 0;
   return {
     name: `${name} on PATH`,
-    ok: false,
-    detail: configured ? `"${bin}" did not run` : `${name} not found`,
-    fix: configured ? "fix or unset the variable that names it" : "brew install ffmpeg",
+    ok,
+    detail: ok ? firstLine(probe.stdout) : `${name} not found`,
+    fix: ok ? "" : "brew install ffmpeg",
   };
 }
 
