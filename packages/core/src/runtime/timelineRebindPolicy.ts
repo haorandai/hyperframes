@@ -10,10 +10,6 @@ export const MEDIA_BIND_INTERVAL_FRAMES = 30;
  * it: `TIMELINE_POST_INTERVAL_FRAMES` frames at a 60 Hz display.
  */
 export const CHANGE_DRIVEN_SERVICE_MIN_INTERVAL_MS = (1000 * TIMELINE_POST_INTERVAL_FRAMES) / 60;
-/**
- * While playing, the transport's housekeeping runs on this timer instead of the frame counter,
- * which on a 120 Hz display would do it twice as often for a film that is not changing.
- */
 export const PLAYING_POLL_INTERVAL_MS = (1000 * TIMELINE_REBIND_INTERVAL_FRAMES) / 60;
 
 export function shouldAttemptPeriodicTimelineBind(input: {
@@ -29,7 +25,6 @@ export function shouldAttemptPeriodicTimelineBind(input: {
    * async rebind cannot race the first two seconds of playback.
    */
   compositionChanged?: boolean;
-  /** The playing transport's poll timer fired this tick (see PLAYING_POLL_INTERVAL_MS). */
   playingPollDue?: boolean;
 }): boolean {
   // The hold is the outer rule and applies to every trigger.
