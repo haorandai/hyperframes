@@ -448,7 +448,12 @@ export function renderMdxCommitBullet(commit: ParsedCommit) {
 }
 
 export function renderTags(commits: ParsedCommit[]) {
-  return ["Release", ...uniqueScopeTags(commits).filter((tag) => tag !== "Release").slice(0, 3)];
+  return [
+    "Release",
+    ...uniqueScopeTags(commits)
+      .filter((tag) => tag.toLowerCase() !== "release")
+      .slice(0, 3),
+  ];
 }
 
 function uniqueScopeTags(commits: ParsedCommit[]) {

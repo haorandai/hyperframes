@@ -162,4 +162,13 @@ describe("release tags", () => {
 
     assert.deepEqual(renderTags(commits), ["Release", "Studio Server", "Core", "Studio"]);
   });
+
+  it("names Release once whatever the case of the release scope", () => {
+    const commits = [
+      "chore(RELEASE): cut v1.2.3 (#5)",
+      "fix(core): wait for a loading video (#6)",
+    ].map((subject) => parseCommit(commit(subject)));
+
+    assert.deepEqual(renderTags(commits), ["Release", "Core"]);
+  });
 });
