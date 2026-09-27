@@ -471,17 +471,6 @@
     };
   }
 
-  // An ancestor (up to and including `stopAt`) that clips its overflow makes any
-  // text spilling past it invisible — that clipping IS the layout mechanism
-  // (odometer/ticker reels, masked windows), not a defect to report.
-  function clippedByAncestor(element, stopAt) {
-    for (let current = element; current; current = current.parentElement) {
-      if (current !== element && clipsOverflow(getComputedStyle(current))) return true;
-      if (current === stopAt) break;
-    }
-    return false;
-  }
-
   function textOverflowIssues(element, root, rootRect, time, tolerance, clippedIssue) {
     const textRect = textRectFor(element, true);
     if (!textRect) return [];
@@ -511,12 +500,7 @@
       containerOverflow != null &&
       containerOverflow.left == null &&
       containerOverflow.top == null;
-    if (
-      containerOverflow &&
-      !billedAsClippedText &&
-      !hasTextClipOptOut(element) &&
-      !clippedByAncestor(element, container)
-    ) {
+    if (containerOverflow && !billedAsClippedText && !hasTextClipOptOut(element)) {
       const style = elementStyle;
       issues.push({
         code: "text_box_overflow",
