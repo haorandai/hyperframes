@@ -107,11 +107,12 @@ export function scanPendingCompositionAssets(
     .filter(isRealmHtmlMediaElement)
     .filter((el) => shouldIncludeAsset(el, scope, resolver, runtimeWindow?.__timelines ?? {}))
     .filter((el) => el.readyState < HAVE_FUTURE_DATA);
+  // A lazy image off the first frame loads only once shown, so no scope can wait on it.
   const pendingImages = Array.from(doc.querySelectorAll("img"))
     .filter((img) =>
       shouldIncludeAsset(
         img,
-        FIRST_FRAME_READINESS_SCOPE,
+        img.getAttribute("loading")?.toLowerCase() === "lazy" ? FIRST_FRAME_READINESS_SCOPE : scope,
         resolver,
         runtimeWindow?.__timelines ?? {},
       ),

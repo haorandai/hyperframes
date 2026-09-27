@@ -179,17 +179,23 @@ describe("mediaReadinessInput", () => {
     await expect(pending).resolves.toBeUndefined();
   });
 
-  it("neither waits for nor decodes a later scene's image, even in the full scan", () => {
+  it("waits on a later scene's image in the full scan unless it is lazy", () => {
     const doc = docWith(
-      '<div data-start="30" data-duration="5"><img id="later" src="later.png"></div>',
+      '<div data-start="30" data-duration="5"><img id="later" src="later.png">' +
+        '<img id="lazy" loading="LAZY" src="lazy.png"></div>',
     );
-    const image = doc.querySelector<HTMLImageElement>("#later")!;
-    Object.defineProperty(image, "complete", { value: false });
-    image.decode = vi.fn().mockResolvedValue(undefined);
+    for (const image of doc.querySelectorAll("img")) {
+      Object.defineProperty(image, "complete", { value: false });
+      image.decode = vi.fn().mockResolvedValue(undefined);
+    }
+    const later = doc.querySelector<HTMLImageElement>("#later")!;
+    const lazy = doc.querySelector<HTMLImageElement>("#lazy")!;
 
-    expect(scanPendingCompositionAssets(doc, { scope: "all" }).pendingImages).toEqual([]);
-    expect(mediaReadinessInput(doc, new AbortController().signal, { scope: "all" })).toBeNull();
-    expect(image.decode).not.toHaveBeenCalled();
+    expect(scanPendingCompositionAssets(doc, { scope: "all" }).pendingImages).toEqual([later]);
+    expect(scanPendingCompositionAssets(doc, { scope: "first-frame" }).pendingImages).toEqual([]);
+    expect(mediaReadinessInput(doc, new AbortController().signal, { scope: "all" })).not.toBeNull();
+    expect(later.decode).toHaveBeenCalled();
+    expect(lazy.decode).not.toHaveBeenCalled();
   });
 });
 
