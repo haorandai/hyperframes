@@ -140,6 +140,54 @@ describe("probeAndCacheElementVolume", () => {
     expect(cache.has(audio)).toBe(false);
   });
 
+  it("does not seek to probe an element whose volume no tween names", () => {
+    const audio = document.createElement("audio");
+    audio.dataset.start = "0";
+    audio.dataset.duration = "25";
+    document.body.append(audio);
+    const title = document.createElement("h1");
+
+    let seekCount = 0;
+    const timeline = {
+      totalTime(next?: number) {
+        if (next !== undefined) seekCount += 1;
+        return 0;
+      },
+      getChildren: () => [
+        { targets: () => [title], vars: { volume: 0, opacity: 1 } },
+        { targets: () => [audio], vars: { playbackRate: 2 } },
+      ],
+    };
+    const cache = new WeakMap<HTMLMediaElement, { time: number; volume: number }[]>();
+
+    // What a rebind does for every bound media element: 25 s at 60 samples/s on main.
+    probeAndCacheElementVolume(audio, timeline, 25, cache);
+
+    expect(seekCount).toBe(0);
+    expect(cache.has(audio)).toBe(false);
+  });
+
+  it("still samples a keyframed volume tween on the element", () => {
+    const audio = document.createElement("audio");
+    audio.dataset.volume = "1";
+    document.body.append(audio);
+
+    const timeline = {
+      totalTime(next?: number) {
+        if (next !== undefined) audio.volume = next >= 1 ? 0 : 1;
+        return 0;
+      },
+      getChildren: () => [{ targets: () => [audio], vars: { keyframes: [{ volume: 0 }] } }],
+    };
+    const cache = new WeakMap<HTMLMediaElement, { time: number; volume: number }[]>();
+
+    probeAndCacheElementVolume(audio, timeline, 2, cache);
+
+    expect(cache.get(audio)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ volume: 0 })]),
+    );
+  });
+
   it("restores the timeline playhead after sampling volume automation", () => {
     const audio = document.createElement("audio");
     audio.dataset.volume = "1";

@@ -202,7 +202,9 @@ function probeKeyframesInWindow(
   return hasAutomation ? keyframes : null;
 }
 
-export type RuntimeTimelineRef = Partial<Pick<RuntimeTimelineLike, "totalTime" | "seek">>;
+export type RuntimeTimelineRef = Partial<
+  Pick<RuntimeTimelineLike, "totalTime" | "seek" | "getChildren">
+>;
 
 export interface VolumeProbeOptions {
   /**
@@ -214,6 +216,31 @@ export interface VolumeProbeOptions {
    * Preview callers omit this option and retain live automation discovery.
    */
   allowLiveTimelineSeek?: boolean;
+}
+
+function namesVolume(vars: unknown, depth = 0): boolean {
+  if (depth > 3 || vars === null || typeof vars !== "object") return false;
+  if (Array.isArray(vars)) return vars.some((item) => namesVolume(item, depth + 1));
+  if (Object.getPrototypeOf(vars) !== Object.prototype) return false;
+  return Object.entries(vars).some(
+    ([key, value]) => key === "volume" || namesVolume(value, depth + 1),
+  );
+}
+
+/**
+ * Whether seeking `timeline` can move `el.volume`. The probe seeks with events suppressed, so only a
+ * tween on the element that names `volume` (keyframes included) can; a timeline without tween
+ * introspection is sampled as before.
+ */
+function timelineCanMoveVolume(timeline: RuntimeTimelineRef, el: HTMLMediaElement): boolean {
+  if (typeof timeline.getChildren !== "function") return true;
+  try {
+    return timeline
+      .getChildren(true, true, false)
+      .some((tween) => (tween.targets?.() ?? []).includes(el) && namesVolume(tween.vars));
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -238,6 +265,8 @@ export function probeAndCacheElementVolume(
   if (!timeline) return;
   if (!isMediaElement(mediaEl)) return;
   if (compositionDuration <= 0) return;
+  // Sampling is ~60 whole-timeline seeks per second of clip, paid again on every rebind.
+  if (!timelineCanMoveVolume(timeline, mediaEl)) return;
 
   const seekFn = (t: number) => {
     try {

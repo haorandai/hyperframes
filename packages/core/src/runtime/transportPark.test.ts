@@ -492,6 +492,22 @@ describe("parked transport loop", () => {
     expect(posts).toBeLessThanOrEqual(2);
   });
 
+  it("does not re-post the manifest while playing a film that is not changing", () => {
+    mount();
+    initSandboxRuntimeModular();
+    quiesce();
+    window.__player!.play();
+    const frame = () => {
+      vi.advanceTimersByTime(8);
+      raf.step(8);
+    };
+    // Past the rebind policy's play hold, at 120 Hz.
+    for (let i = 0; i < 300; i += 1) frame();
+    const before = posted.filter((m) => m["type"] === "timeline").length;
+    for (let i = 0; i < 250; i += 1) frame();
+    expect(posted.filter((m) => m["type"] === "timeline").length - before).toBe(0);
+  });
+
   it("does not park when the manifest post throws with a change still pending", async () => {
     mount();
     initSandboxRuntimeModular();
