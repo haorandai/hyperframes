@@ -26,4 +26,11 @@ describe("lazyPreviewImages", () => {
     const fragment = '<div data-start="5"><img src="b.png"></div>';
     expect(lazyPreviewImages(fragment)).toBe(fragment);
   });
+
+  it("changes nothing but the attribute, entities included", () => {
+    const head = "<head><title>a &amp;lt;x &amp; y</title></head>";
+    const body = '<div title="a &amp;amp;lt;b" data-start="5"><img src="b.png?x=1&amp;y=2"></div>';
+    const html = `<!DOCTYPE html><html>${head}<body>${body}</body></html>`;
+    expect(lazyPreviewImages(html)).toBe(html.replace("<img ", '<img loading="lazy" '));
+  });
 });
