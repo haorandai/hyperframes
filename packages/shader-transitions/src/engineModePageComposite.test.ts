@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  clonePinStyleFor,
   installPageSideCompositor,
   isPageSideCompositingSupported,
   PAGE_COMPOSITOR_BUILD_CANARY,
@@ -68,26 +67,6 @@ describe("isPageSideCompositingSupported", () => {
       }),
     });
     expect(isPageSideCompositingSupported()).toBe(false);
-  });
-});
-
-describe("clonePinStyleFor", () => {
-  it("fixes a 0x0 inset:0 scene root to its live-measured box (the collapse this exists to prevent)", () => {
-    // A scene root sized only by `position:absolute; inset:0` measures as
-    // the full composition frame in the live document (its containing block
-    // there is the real ancestor chain) — collapses to 0x0 only once cloned
-    // into the staging canvas's own layout subtree.
-    const pin = clonePinStyleFor({ left: 0, top: 0, width: 1080, height: 1920 });
-    expect(pin).toEqual({ left: "0px", top: "0px", width: "1080px", height: "1920px" });
-  });
-
-  it("preserves an authored explicit width/height and offset instead of overriding it", () => {
-    // A scene root with its own explicit size/position (e.g. a picture-in-
-    // picture panel) measures as that exact box in the live document —
-    // clonePinStyleFor must reproduce it verbatim, not the full composition
-    // frame, or the clone would silently grow to fill the canvas.
-    const pin = clonePinStyleFor({ left: 120, top: 240, width: 400, height: 300 });
-    expect(pin).toEqual({ left: "120px", top: "240px", width: "400px", height: "300px" });
   });
 });
 
@@ -197,11 +176,27 @@ describe("page-side compositor scene copies", () => {
     stage: { left: 0, top: 0, width: 0, height: 0 },
     scene: { left: 160, top: 90, width: 320, height: 180 },
   };
+  // Where the stylesheet gives an element CSS animations, and the live times of those still running.
+  const CSS_ANIMATIONS: Record<string, string[]> = { stage: ["pulse", "intro"] };
+  const LIVE_TIMES: Record<string, Record<string, number>> = { stage: { pulse: 400 } };
+
+  class FakeAnimation {
+    currentTime: number | null = 0;
+    state = "running";
+    constructor(readonly animationName: string) {}
+    pause() {
+      this.state = "paused";
+    }
+    cancel() {
+      this.state = "cancelled";
+    }
+  }
 
   class FakeEl {
     style: Record<string, string> = {};
     children: FakeEl[] = [];
     parentElement: FakeEl | null = null;
+    animations: FakeAnimation[] = [];
     constructor(
       readonly id: string,
       readonly copyOf: FakeEl | null = null,
@@ -209,11 +204,25 @@ describe("page-side compositor scene copies", () => {
     getAttribute() {
       return null;
     }
+    get key(): string {
+      return (this.copyOf ?? this).id.replace(/^scene-.*/, "scene");
+    }
     getBoundingClientRect() {
-      return BOX[this.id] ?? BOX.scene;
+      const box = BOX[this.key]!;
+      // Copies lay out 8px up and left of the live page, as if the body margin were missing.
+      return this.copyOf ? { ...box, left: box.left - 8, top: box.top - 8 } : box;
+    }
+    getAnimations() {
+      if (this.copyOf) return this.animations;
+      return Object.entries(LIVE_TIMES[this.key] ?? {}).map(([name, time]) => {
+        const live = new FakeAnimation(name);
+        live.currentTime = time;
+        return live;
+      });
     }
     cloneNode(deep: boolean) {
       const copy = new FakeEl(`${this.id}-copy`, this);
+      copy.animations = (CSS_ANIMATIONS[this.key] ?? []).map((name) => new FakeAnimation(name));
       if (deep) copy.children = this.children.map((c) => c.cloneNode(true));
       return copy;
     }
@@ -296,7 +305,7 @@ describe("page-side compositor scene copies", () => {
     vi.stubGlobal("window", win);
     vi.stubGlobal("HTMLElement", FakeEl);
     vi.stubGlobal("document", {
-      createElement: createCanvas,
+      createElement: (tag: string) => (tag === "canvas" ? createCanvas() : new FakeEl(tag)),
       getElementById: (id: string) => scenes.get(id) ?? null,
       body,
       documentElement: null,
@@ -320,7 +329,7 @@ describe("page-side compositor scene copies", () => {
     return { calls, composite, overlay };
   }
 
-  it("stages each scene copy, pinned to its live box, inside style-only ancestor copies", async () => {
+  it("stages each scene copy inside unaltered ancestor copies, aligned to the live page", async () => {
     const { calls, composite } = installTransparentInsetFilm();
     expect(await composite(1.2)).toBe(true);
     const draws = calls.filter((c) => c.op === "drawElementImage");
@@ -329,36 +338,38 @@ describe("page-side compositor scene copies", () => {
       [0, "scene-a"],
       [1, "scene-b"],
     ] as const) {
-      const root = draws[index]?.args[0] as FakeEl;
-      expect(root.copyOf?.id).toBe("main");
-      expect(root.style).toMatchObject({
-        left: "0px",
-        top: "0px",
-        width: "640px",
-        height: "360px",
-      });
-      expect(root.style).toMatchObject({ transform: "none", animation: "none", border: "0" });
-      const stage = root.children[0]!;
-      expect(stage.copyOf?.id).toBe("stage");
-      expect(stage.style.display).toBe("contents");
-      expect(stage.children.map((c) => c.copyOf?.id)).toEqual([sceneId]);
-      expect(stage.children[0]?.style).toMatchObject({
-        position: "absolute",
-        left: "160px",
-        top: "90px",
-        width: "320px",
-        height: "180px",
-      });
+      const frame = draws[index]?.args[0] as FakeEl;
       expect(draws[index]?.args.slice(1)).toEqual([0, 0, 640, 360]);
+      expect(frame.style).toMatchObject({ left: "8px", top: "8px" });
+      const main = frame.children[0]!;
+      const stage = main.children[0]!;
+      const scene = stage.children[0]!;
+      expect([main, stage, scene].map((el) => el.copyOf?.id)).toEqual(["main", "stage", sceneId]);
+      expect(main.style).toEqual({});
+      expect(stage.style).toEqual({});
+      expect(scene.style).toEqual({ opacity: "1", visibility: "visible" });
     }
   });
 
-  it("draws a scene staged directly under body at its own box", async () => {
+  it("holds copied CSS animations at the live time and cancels ones finished live", async () => {
+    const { calls, composite } = installTransparentInsetFilm();
+    await composite(1.2);
+    const frame = calls.find((c) => c.op === "drawElementImage")?.args[0] as FakeEl;
+    const [pulse, intro] = frame.children[0]!.children[0]!.animations;
+    expect(pulse).toMatchObject({ animationName: "pulse", state: "paused", currentTime: 400 });
+    expect(intro).toMatchObject({ animationName: "intro", state: "cancelled" });
+  });
+
+  it("aligns a scene staged directly under body to its live box", async () => {
     const { calls, composite } = installTransparentInsetFilm({ underBody: true });
     expect(await composite(1.2)).toBe(true);
     const draws = calls.filter((c) => c.op === "drawElementImage");
-    expect(draws.map((d) => (d.args[0] as FakeEl).copyOf?.id)).toEqual(["scene-a", "scene-b"]);
-    for (const draw of draws) expect(draw.args.slice(1)).toEqual([160, 90, 320, 180]);
+    for (const draw of draws) {
+      const frame = draw.args[0] as FakeEl;
+      expect(frame.children.map((c) => c.copyOf?.id.slice(0, 5))).toEqual(["scene"]);
+      expect(frame.style).toMatchObject({ left: "8px", top: "8px" });
+      expect(draw.args.slice(1)).toEqual([0, 0, 640, 360]);
+    }
   });
 
   it("clears both staging bitmaps after the textures are uploaded", async () => {

@@ -76,73 +76,54 @@ interface ResolvedTransition {
 export const PAGE_COMPOSITOR_CANVAS_ID = "__hf-page-side-compositor";
 export const PAGE_COMPOSITOR_BUILD_CANARY = "__hf_page_compositor_v1__";
 
-export interface ClonePinStyle {
-  left: string;
-  top: string;
-  width: string;
-  height: string;
-}
-
 /**
- * Style values to pin a cloned scene to the box its source measured while live. Positioned
- * absolutely inside a full-frame staging box, the clone keeps the live size and position
- * instead of collapsing to 0x0 when sized only by `inset:0`.
- */
-export function clonePinStyleFor(rect: {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}): ClonePinStyle {
-  return {
-    left: `${rect.left}px`,
-    top: `${rect.top}px`,
-    width: `${rect.width}px`,
-    height: `${rect.height}px`,
-  };
-}
-
-type Box = { left: number; top: number; width: number; height: number };
-
-/**
- * Wraps a scene clone in childless copies of its ancestors below `<body>`: they carry the
- * inherited styles, custom properties and composition-scoped selectors, never layout. Inner
- * copies get no box; the outermost becomes a full-frame box with no border, transform or
- * animation. Returns that outermost copy.
+ * Wraps a scene clone in childless copies of its ancestors below `<body>`, so inherited styles,
+ * scoped selectors and ancestor effects (transform, opacity, filter, clip) apply as they do live.
+ * Returns the outermost copy, the live element it copies, and every live/copy pair.
  */
 function stageWithAncestors(
   scene: HTMLElement,
   clone: HTMLElement,
-  width: number,
-  height: number,
-): HTMLElement {
+): { root: HTMLElement; liveRoot: HTMLElement; pairs: Array<[Element, Element]> } {
+  const liveDescendants = scene.querySelectorAll("*");
+  const cloneDescendants = clone.querySelectorAll("*");
+  const pairs: Array<[Element, Element]> = [[scene, clone]];
+  liveDescendants.forEach((el, n) => pairs.push([el, cloneDescendants[n]!]));
   let root = clone;
+  let liveRoot = scene;
   for (
     let el = scene.parentElement;
     el && el !== document.body && el !== document.documentElement;
     el = el.parentElement
   ) {
     const shell = el.cloneNode(false) as HTMLElement;
-    shell.style.display = "contents";
     shell.appendChild(root);
+    pairs.push([el, shell]);
     root = shell;
+    liveRoot = el;
   }
-  if (root !== clone) {
-    Object.assign(root.style, {
-      display: "block",
-      position: "absolute",
-      left: "0px",
-      top: "0px",
-      width: `${width}px`,
-      height: `${height}px`,
-      margin: "0",
-      padding: "0",
-      border: "0",
-      transform: "none",
-      animation: "none",
-    });
+  return { root, liveRoot, pairs };
+}
+
+/**
+ * Pauses each CSS animation of `copy` at its live counterpart's time; on a fresh copy it would
+ * restart. One with no live counterpart has finished live, so it is cancelled.
+ */
+function holdAnimationsAt(live: Element, copy: Element): void {
+  const liveTimes = new Map<string, CSSNumberish | null>();
+  for (const a of live.getAnimations()) {
+    if ("animationName" in a) liveTimes.set((a as CSSAnimation).animationName, a.currentTime);
   }
-  return root;
+  for (const a of copy.getAnimations()) {
+    if (!("animationName" in a)) continue;
+    const time = liveTimes.get((a as CSSAnimation).animationName);
+    if (time === undefined) {
+      a.cancel();
+    } else {
+      a.pause();
+      a.currentTime = time;
+    }
+  }
 }
 
 export function isPageSideCompositingSupported(): boolean {
@@ -268,8 +249,6 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
 
   let currentActive: ResolvedTransition | null = null;
   let currentProgress = 0;
-  let fromRect: Box | null = null;
-  let toRect: Box | null = null;
 
   type PendingWindow = Window & {
     __hf_page_composite_pending?: boolean;
@@ -303,7 +282,6 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
     // paint record" and the shader degrades to a hard cut. The shader blends from
     // full-opacity textures via u_progress, so force the clones visible. Cf.
     // forceSceneVisibleInClone (html2canvas path).
-    const rects: Box[] = [];
     for (const [live, staging] of [
       [fromEl, fromStaging],
       [toEl, toStaging],
@@ -315,13 +293,19 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
         el.style.opacity = "1";
         el.style.visibility = "visible";
       });
-      const rect = live.getBoundingClientRect();
-      Object.assign(clone.style, { position: "absolute", ...clonePinStyleFor(rect) });
-      const root = stageWithAncestors(live, clone, width, height);
-      staging.appendChild(root);
-      rects.push(root === clone ? rect : { left: 0, top: 0, width, height });
+      const { root, liveRoot, pairs } = stageWithAncestors(live, clone);
+      // A full-frame box gives the copies a sized containing block; it is then shifted so
+      // the copied root lands where the live one is (body margin, any offset it inherits).
+      const frame = document.createElement("div");
+      frame.style.cssText = `position:absolute;left:0;top:0;width:${width}px;height:${height}px;margin:0;`;
+      frame.appendChild(root);
+      staging.appendChild(frame);
+      for (const [liveEl, copyEl] of pairs) holdAnimationsAt(liveEl, copyEl);
+      const liveBox = liveRoot.getBoundingClientRect();
+      const copyBox = root.getBoundingClientRect();
+      frame.style.left = `${liveBox.left - copyBox.left}px`;
+      frame.style.top = `${liveBox.top - copyBox.top}px`;
     }
-    [fromRect, toRect] = rects;
 
     // Decode any data-URI images in clones so the browser has current
     // bitmaps before the micro-screenshot forces a paint pass.
@@ -350,7 +334,7 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
 
     const fromChild = fromStaging.firstElementChild;
     const toChild = toStaging.firstElementChild;
-    if (!fromChild || !toChild || !fromRect || !toRect) {
+    if (!fromChild || !toChild) {
       pWin.__hf_page_composite_pending = false;
       return false;
     }
@@ -363,14 +347,14 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
     }
 
     const staged = [
-      [fromCtx, fromChild, fromRect],
-      [toCtx, toChild, toRect],
+      [fromCtx, fromChild],
+      [toCtx, toChild],
     ] as const;
     try {
-      for (const [ctx, child, rect] of staged) {
+      for (const [ctx, child] of staged) {
         ctx.fillStyle = options.bgColor;
         ctx.fillRect(0, 0, width, height);
-        ctx.drawElementImage(child, rect.left, rect.top, rect.width, rect.height);
+        ctx.drawElementImage(child, 0, 0, width, height);
       }
       uploadTextureSource(gl as WebGLRenderingContext, fromTex, fromStaging);
       uploadTextureSource(gl as WebGLRenderingContext, toTex, toStaging);
