@@ -660,7 +660,7 @@ describe("useTimelinePlayer scene swap", () => {
     const { getApi } = liveFilm(swap);
     act(() => getApi().refreshPlayer());
     await settle();
-    expect(swap).toHaveBeenCalledWith("<html>v2</html>");
+    expect(swap).toHaveBeenCalledWith("<html>v2</html>", expect.anything());
     expect(roles(getApi())).toEqual(["live"]);
   });
 
@@ -695,7 +695,7 @@ describe("useTimelinePlayer scene swap", () => {
     await settle();
     replies[0]!(new Response("<html>v2</html>"));
     await settle();
-    expect(swap.mock.calls).toEqual([["<html>v3</html>"]]);
+    expect(swap.mock.calls).toEqual([["<html>v3</html>", expect.anything()]]);
     expect(roles(getApi())).toEqual(["live"]);
   });
 
@@ -751,6 +751,27 @@ describe("useTimelinePlayer scene swap", () => {
     await settle();
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(swap).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a playing film stopped at its new end when a swap cuts it short of the playhead", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("<html>v2</html>"));
+    let length = 6;
+    // As the runtime's swap does when the edit ends the film at or before the playhead.
+    const cutShort = async () => {
+      length = 5;
+      adapter.pause();
+      adapter.seek(5);
+    };
+    const { getApi, adapter } = playingFilm(cutShort);
+    adapter.getDuration = () => length;
+    adapter.seek(5.5);
+    act(() => getApi().refreshPlayer());
+    await settle();
+    await act(async () => void (await new Promise((r) => setTimeout(r, 50))));
+    expect(usePlayerStore.getState().isPlaying).toBe(false);
+    expect(usePlayerStore.getState().currentTime).toBe(5);
+    expect(adapter.play).toHaveBeenCalledTimes(1);
+    expect(roles(getApi())).toEqual(["live"]);
   });
 
   it("keeps a playing film playing through a refused swap, from where the live frame had reached", async () => {

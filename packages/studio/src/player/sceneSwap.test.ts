@@ -7,7 +7,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function swappableIframe(swap = vi.fn(async () => {})) {
+type Swap = (html: string, signal?: AbortSignal) => Promise<void>;
+
+function swappableIframe(swap: Swap = vi.fn(async () => {})) {
   const iframe = document.createElement("iframe");
   document.body.append(iframe);
   Object.assign(iframe.contentWindow as object, { __hfSwapScenes: swap });
@@ -48,10 +50,32 @@ describe("sceneSwapFor", () => {
     expect(swapped).not.toHaveBeenCalled();
   });
 
+  it("cancels the runtime's swap as it gives up, so captions arriving later replace nothing", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response("<html></html>"));
+    let captionsArrive = () => {};
+    const captions = new Promise<void>((resolve) => (captionsArrive = resolve));
+    let replaced = false;
+    // As the runtime does: it waits for the caption overrides, then refuses a cancelled swap.
+    const { iframe } = swappableIframe(async (_html, signal) => {
+      await captions;
+      if (signal?.aborted) throw new Error("the swap was cancelled");
+      replaced = true;
+    });
+    const outcome = expect(sceneSwapFor(iframe)!("/preview", () => true)).rejects.toThrow(
+      "took too long",
+    );
+    await vi.advanceTimersByTimeAsync(SCENE_SWAP_MS);
+    await outcome;
+    captionsArrive();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(replaced).toBe(false);
+  });
+
   it("swaps a document that arrives in time", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response("<html></html>"));
     const { iframe, swap } = swappableIframe();
     await sceneSwapFor(iframe)!("/preview", () => true);
-    expect(swap).toHaveBeenCalledWith("<html></html>");
+    expect(swap).toHaveBeenCalledWith("<html></html>", expect.anything());
   });
 });

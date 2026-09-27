@@ -1,4 +1,6 @@
-type SwapWindow = Window & { __hfSwapScenes?: (html: string) => Promise<void> };
+type SwapWindow = Window & {
+  __hfSwapScenes?: (html: string, signal?: AbortSignal) => Promise<void>;
+};
 
 const SCENES_SWAPPED = "hf-scenes-swapped";
 export const SCENE_SWAP_MS = 5000;
@@ -33,7 +35,8 @@ export function sceneSwapFor(
       if (!response.ok) throw new Error(`preview request failed with ${response.status}`);
       const html = await response.text();
       if (!isCurrent()) throw new Error("superseded by a newer reload");
-      await swap.call(win, html);
+      // Aborted with the deadline, so a swap still waiting cannot land after the reload has begun.
+      await swap.call(win, html, deadline.signal);
     })();
     const expired = new Promise<never>((_resolve, reject) =>
       deadline.signal.addEventListener("abort", () => reject(deadline.signal.reason)),
