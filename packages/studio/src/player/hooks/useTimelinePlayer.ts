@@ -455,9 +455,13 @@ export function useTimelinePlayer({
     [saveSeekPosition, getAdapter, beginShadowReload],
   );
   const refreshGenRef = useRef(0);
+  const swapCancelRef = useRef<AbortController | null>(null);
   const refreshPlayer = useCallback(() => {
     const iframe = iframeRef.current;
     if (!iframe) return;
+    swapCancelRef.current?.abort(new Error("superseded by a newer edit"));
+    const cancel = new AbortController();
+    swapCancelRef.current = cancel;
     logReload("refreshPlayer", () => ({ stack: new Error("refreshPlayer").stack }));
     const url = new URL(iframe.src, window.location.origin);
     url.searchParams.set("_t", String(Date.now()));
@@ -468,7 +472,7 @@ export function useTimelinePlayer({
     const isCurrent = () => gen === refreshGenRef.current && slot === previewGeneration();
     const swap = sceneSwapFor(iframe);
     if (!swap || isRefreshingRef.current) return reloadWholeFilm(url.toString());
-    swap(url.toString(), isCurrent).catch((error: unknown) => {
+    swap(url.toString(), isCurrent, cancel.signal).catch((error: unknown) => {
       if (!isCurrent()) return;
       logReload("scene-swap-refused", { reason: String(error) });
       reloadWholeFilm(url.toString());

@@ -17,19 +17,20 @@ export function onPreviewContentReplaced(
   };
 }
 
-/** Null when the preview cannot swap; rejects when superseded or a full reload is needed. */
+/** Null when the preview cannot swap; rejects when superseded, cancelled or a full reload is needed. */
 export function sceneSwapFor(
   iframe: HTMLIFrameElement,
-): ((url: string, isCurrent: () => boolean) => Promise<void>) | null {
+): ((url: string, isCurrent: () => boolean, cancel?: AbortSignal) => Promise<void>) | null {
   const win = iframe.contentWindow as SwapWindow | null;
   const swap = win?.__hfSwapScenes;
   if (typeof swap !== "function") return null;
-  return async (url, isCurrent) => {
+  return async (url, isCurrent, cancel) => {
     const deadline = new AbortController();
     const timer = setTimeout(
       () => deadline.abort(new Error("the preview took too long to swap")),
       SCENE_SWAP_MS,
     );
+    cancel?.addEventListener("abort", () => deadline.abort(cancel.reason), { once: true });
     const swapping = (async () => {
       const response = await fetch(url, { signal: deadline.signal });
       if (!response.ok) throw new Error(`preview request failed with ${response.status}`);

@@ -699,6 +699,30 @@ describe("useTimelinePlayer scene swap", () => {
     expect(roles(getApi())).toEqual(["live"]);
   });
 
+  it("cancels an older swap still waiting when a newer edit starts, so it cannot land after that edit's reload", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response("<html>v</html>"));
+    let captionsArrive = () => {};
+    const captions = new Promise<void>((resolve) => (captionsArrive = resolve));
+    const landed: string[] = [];
+    let calls = 0;
+    // As the runtime does: the first waits for caption overrides, then refuses if cancelled; the second is refused.
+    const swap = async (_html: string, signal?: AbortSignal) => {
+      if (++calls > 1) throw new Error("the film changed outside its scenes");
+      await captions;
+      if (signal?.aborted) throw new Error("the swap was cancelled");
+      landed.push("edit 1");
+    };
+    const { getApi } = liveFilm(swap);
+    act(() => getApi().refreshPlayer());
+    await settle();
+    act(() => getApi().refreshPlayer());
+    await settle();
+    expect(roles(getApi())).toContain("shadow");
+    captionsArrive();
+    await settle();
+    expect(landed).toEqual([]);
+  });
+
   it("drops a pending swap's fallback once the preview was replaced, e.g. by a composition switch", async () => {
     let refuse!: (e: Error) => void;
     const swap = vi.fn(() => new Promise<void>((_, reject) => (refuse = reject)));
