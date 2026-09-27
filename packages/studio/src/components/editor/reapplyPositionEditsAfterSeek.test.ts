@@ -62,6 +62,37 @@ describe("reapplyPositionEditsAfterSeek", () => {
     expect(el.style.getPropertyValue("rotate")).toContain(STUDIO_ROTATION_PROP);
   });
 
+  it("reapplies an edited element inserted after the last seek", async () => {
+    document.body.innerHTML = '<div id="a"></div>';
+    reapplyPositionEditsAfterSeek(document);
+    const queryAll = vi.spyOn(document, "querySelectorAll");
+    reapplyPositionEditsAfterSeek(document);
+    expect(queryAll).not.toHaveBeenCalled(); // the film reads as unedited
+    queryAll.mockRestore();
+    // A paste, scene swap or undo puts back a node that already carries its mark.
+    const el = document.createElement("div");
+    el.setAttribute(STUDIO_ROTATION_ATTR, "true");
+    el.style.setProperty(STUDIO_ROTATION_PROP, "8deg");
+    document.body.append(el);
+    await Promise.resolve();
+
+    reapplyPositionEditsAfterSeek(document);
+
+    expect(el.style.getPropertyValue("rotate")).toContain(STUDIO_ROTATION_PROP);
+  });
+
+  it("does not rescan after a style write, the one GSAP makes every frame", async () => {
+    document.body.innerHTML = '<div id="a"></div>';
+    reapplyPositionEditsAfterSeek(document);
+    (document.getElementById("a") as HTMLElement).style.setProperty("opacity", "0.5");
+    await Promise.resolve();
+    const query = vi.spyOn(document, "querySelector");
+
+    reapplyPositionEditsAfterSeek(document);
+
+    expect(query).not.toHaveBeenCalled();
+  });
+
   it("still clears a motion timeline whose marks an undo removed", () => {
     document.body.innerHTML = '<div id="a"></div>';
     const kill = vi.fn();
