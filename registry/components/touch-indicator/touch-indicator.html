@@ -206,7 +206,7 @@
             // --- HOLD: the only elastic phase. Stretch it, never gsap.timeScale(). ---
             let holdEnd;
             if (vars.gesture === "swipe") {
-              // RETIME RANGE: 0.28s - 0.52s per the swipe law. elasticity scales pacing.
+              // a swipe lasts 0.28s to 0.52s; elasticity scales its pacing.
               const swipeDuration = q(clamp(0.34 * elasticity, 0.28, 0.52));
               const travel = hostH * 0.4; // vertical scroll, 40% of host height (32-68% allowed)
               const accel = q(swipeDuration * 0.41);
