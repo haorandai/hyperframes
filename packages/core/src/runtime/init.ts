@@ -240,8 +240,8 @@ const authoredShape = (el: Element): string =>
     el.innerHTML,
   ]);
 
-// What the runtime writes on a video or audio: style (reset on a kept one), preload, the opacity stamp and a moved
-// element's original translate. A proxied src is compared as written; a variable-bound one is the binding's.
+// What the runtime writes on a video or audio: style (reset on a kept one), preload, the opacity stamp, a moved
+// element's original translate and its own __hf- classes. A proxied src is compared as written; a bound one is not.
 const RUNTIME_MEDIA_ATTRS = new Set([
   "style",
   "preload",
@@ -249,11 +249,19 @@ const RUNTIME_MEDIA_ATTRS = new Set([
   COLOR_GRADING_AUTHORED_OPACITY_ATTR,
   EDIT_ORIGINAL_TRANSLATE_ATTR,
 ]);
+const ownClasses = (value: string) =>
+  value
+    .split(/\s+/)
+    .filter((c) => c && !c.startsWith("__hf-"))
+    .join(" ");
 const writtenShape = (el: Element): string =>
   JSON.stringify([
-    Array.from(el.attributes, (a) => [a.name, a.value]).filter(
-      ([name]) => !RUNTIME_MEDIA_ATTRS.has(name!),
-    ),
+    Array.from(el.attributes, ({ name, value }) => [
+      name,
+      name === "class" ? ownClasses(value) : value,
+    ])
+      .filter(([name, value]) => !RUNTIME_MEDIA_ATTRS.has(name!) && !(name === "class" && !value))
+      .sort(([a], [b]) => (a! < b! ? -1 : 1)),
     el.hasAttribute("data-var-src") ? null : unproxiedSrc(el),
     el.innerHTML,
   ]);

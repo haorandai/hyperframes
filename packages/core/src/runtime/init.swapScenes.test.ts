@@ -664,6 +664,45 @@ describe("__hfSwapScenes", () => {
     expect(sceneHost("a").querySelector("video")).toBe(kept);
   });
 
+  it.each([
+    ["the edit flash", "__hf-flash"],
+    ["the picker's hover", "__hf-pick-highlight"],
+  ])("keeps a video that carries %s class at the swap", async (_, name) => {
+    quietMedia();
+    const { html } = bootWithHeadingScript(
+      "void video",
+      '<video class="clip" src="clip.mp4"></video>',
+    );
+    await tick();
+    const video = sceneHost("a").querySelector("video")!;
+    video.classList.add(name);
+    await window.__hfSwapScenes!(html);
+    expect(sceneHost("a").querySelector("video")).toBe(video);
+  });
+
+  it("keeps a video that carries the edit flash as its only class at the swap", async () => {
+    quietMedia();
+    const { html } = bootWithHeadingScript("void video");
+    await tick();
+    const video = sceneHost("a").querySelector("video")!;
+    video.classList.add("__hf-flash");
+    await window.__hfSwapScenes!(html);
+    expect(sceneHost("a").querySelector("video")).toBe(video);
+  });
+
+  it("keeps a video whose unchanged script removes an attribute and puts it back as it was", async () => {
+    quietMedia();
+    const { html } = bootWithHeadingScript(
+      "video.removeAttribute('title'), video.setAttribute('title', 'clip')",
+      '<video title="clip" data-id="v" src="clip.mp4"></video>',
+    );
+    await tick();
+    const video = sceneHost("a").querySelector("video")!;
+    expect(video.getAttributeNames().at(-1)).toBe("title");
+    await window.__hfSwapScenes!(html);
+    expect(sceneHost("a").querySelector("video")).toBe(video);
+  });
+
   it("unmutes a kept video though stopping Web Audio puts back the mute it saved from the old script", async () => {
     quietMedia();
     const { html } = bootWithHeadingScript("video.muted = true");
