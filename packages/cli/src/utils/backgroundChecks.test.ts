@@ -94,6 +94,13 @@ describe("launchBackgroundChecks", () => {
     expect(spawnedChecks()).toEqual(["update", "skills"]);
   });
 
+  it("ignores an attempt stamp dated in the future, as after a clock correction", () => {
+    const later = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    disk.config = { lastUpdateAttemptAt: later, lastSkillsAttemptAt: later };
+    launchBackgroundChecks();
+    expect(spawnedChecks()).toEqual(["update", "skills"]);
+  });
+
   it("does not start a second skills check while one started this hour", () => {
     disk.config = { lastUpdateCheck: new Date().toISOString(), latestVersion: "1.0.0" };
     launchBackgroundChecks();

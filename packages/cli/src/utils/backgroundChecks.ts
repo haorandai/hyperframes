@@ -9,7 +9,8 @@ import { updateCheckDue } from "./updateCheck.js";
 const FAILED_CHECK_RETRY_MS = 60 * 60 * 1000;
 
 function attemptedRecently(stamp: string | undefined, now: number): boolean {
-  return stamp !== undefined && now - new Date(stamp).getTime() < FAILED_CHECK_RETRY_MS;
+  const age = stamp === undefined ? NaN : now - new Date(stamp).getTime();
+  return age >= 0 && age < FAILED_CHECK_RETRY_MS;
 }
 
 /** Refresh the due update and skills caches in a detached child, so this process never waits on it. */
