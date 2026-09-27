@@ -3,7 +3,7 @@
   "name": "oversized-cursor",
   "type": "hyperframes:component",
   "title": "Oversized Cursor",
-  "description": "The look-here pointer for a video: the macOS arrow at 3.5x its normal size lands its tip on one control, clicks it on, and settles just below it so the result stays in view",
+  "description": "The look-here pointer for a video: the macOS arrow at 3.5x its normal size lands its tip on one control, clicks it on, settles just below it so the result stays in view, then exits off-screen",
   "tags": ["cursor", "motion-primitive", "actor", "pointer", "interaction"],
   "files": [
     {
