@@ -1224,14 +1224,8 @@ async function readGoogleFontStylesheet(
   try {
     const cssResult = await fetchGoogleFontCss(url, familyName, options);
     if (!cssResult.ok) {
-      // 4xx is a *deterministic* answer from Google Fonts that this
-      // family is not served (e.g. HTTP 400 for "Segoe UI", "Arial",
-      // "Futura" — names absent from Google's catalog) or is misnamed.
-      // The render falls back to embedded faces / the composition's
-      // font-family chain; we return [] in both modes. 5xx (and other
-      // transient upstream failures) could return faces on retry, which
-      // would break the byte-identical-retry contract distributed
-      // renders rely on — those still fail closed when requested.
+      // Missing families are deterministic; transient failures follow the
+      // caller's retry and fail-closed policy.
       return null;
     }
     return cssResult.body;
