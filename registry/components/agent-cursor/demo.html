@@ -2,7 +2,7 @@
 <!--
   Agent Cursor, standalone demo: an agent opens Settings and turns on backups. It mounts
   agent-cursor.html full-frame over the app window; the window reacts on the cursor's
-  click beats (2.79s and 4.39s).
+  click beats (2.0s and 3.35s).
 -->
 <html lang="en">
   <head>
@@ -28,7 +28,7 @@
         width: 1920px;
         height: 1080px;
         overflow: hidden;
-        background: radial-gradient(1400px 900px at 70% 0%, #2b2f55 0%, #111324 70%);
+        background: #111318;
         font-family: Inter, system-ui, sans-serif;
       }
       .window {
@@ -125,7 +125,7 @@
         background: #d6d9e3;
       }
       .toggle.on {
-        background: #8b5cf6;
+        background: #0a84ff;
       }
       .knob {
         position: absolute;
@@ -160,9 +160,9 @@
       data-start="0"
       data-width="1920"
       data-height="1080"
-      data-duration="6"
+      data-duration="4.8"
     >
-      <div class="window clip" id="window" data-start="0" data-duration="6" data-track-index="0">
+      <div class="window clip" id="window" data-start="0" data-duration="4.8" data-track-index="0">
         <div class="side">
           <div class="brand">Workspace</div>
           <div class="nav-sel" id="nav-sel" style="top: 184px"></div>
@@ -216,9 +216,9 @@
         id="agent-cursor"
         data-composition-id="agent-cursor"
         data-composition-src="./agent-cursor.html"
-        data-variable-values='{"agent_name":"Agent","steps":"Reading the page,Opening Settings,Turning on backups,Done","targets":"24.8,47.6;76.1,30.2","accent":"#8b5cf6"}'
+        data-variable-values='{"agent_name":"Agent","steps":"Reading the page,Opening Settings,Turning on backups,Done","targets":"24.8,47.6;76.1,30.2","accent":"#0a84ff"}'
         data-start="0"
-        data-duration="6"
+        data-duration="4.8"
         data-track-index="1"
         data-width="1920"
         data-height="1080"
@@ -230,22 +230,22 @@
       window.__timelines = window.__timelines || {};
       var tl = gsap.timeline({ paused: true });
 
-      // First click (2.79s): Settings opens.
-      tl.to("#nav-sel", { y: 128, duration: 0.3, ease: "power3.out" }, 2.83);
-      tl.to("#projects", { opacity: 0, x: -12, duration: 0.18, ease: "power2.in" }, 2.83);
-      tl.to("#nav-projects", { color: "#5b6173", duration: 0.2 }, 2.83);
-      tl.to("#nav-settings", { color: "#151827", duration: 0.2 }, 2.83);
+      // First click (2.0s): Settings opens.
+      tl.to("#nav-sel", { y: 128, duration: 0.3, ease: "power3.out" }, 2.04);
+      tl.to("#projects", { opacity: 0, x: -12, duration: 0.18, ease: "power2.in" }, 2.04);
+      tl.to("#nav-projects", { color: "#5b6173", duration: 0.2 }, 2.04);
+      tl.to("#nav-settings", { color: "#151827", duration: 0.2 }, 2.04);
       tl.fromTo(
         "#settings",
         { opacity: 0, x: 16 },
         { opacity: 1, x: 0, duration: 0.3, ease: "power3.out" },
-        2.95,
+        2.16,
       );
 
-      // Second click (4.39s): backups turn on.
-      tl.to("#backup-toggle", { backgroundColor: "#8b5cf6", duration: 0.2 }, 4.43);
-      tl.to("#backup-knob", { x: 26, duration: 0.26, ease: "back.out(1.8)" }, 4.43);
-      tl.set("#backup-sub", { textContent: "On. Next backup tonight at 2:00." }, 4.5);
+      // Second click (3.35s): backups turn on.
+      tl.to("#backup-toggle", { backgroundColor: "#0a84ff", duration: 0.2 }, 3.39);
+      tl.to("#backup-knob", { x: 26, duration: 0.26, ease: "back.out(1.8)" }, 3.39);
+      tl.set("#backup-sub", { textContent: "On. Next backup tonight at 2:00." }, 3.46);
 
       window.__timelines["agent-cursor-demo"] = tl;
     </script>
