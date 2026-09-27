@@ -84,13 +84,9 @@ export interface ClonePinStyle {
 }
 
 /**
- * Style values to pin a cloned scene root to the box its source measured
- * WHILE STILL LIVE in the document — never the composition's full pixel size.
- * A live-document `getBoundingClientRect()` already resolves `inset:0` (and
- * any authored explicit width/height) correctly against the real ancestor
- * chain; reapplying that exact box to the clone fixes the 0x0 collapse a
- * detached `inset:0` clone would otherwise have inside the staging canvas's
- * layout subtree, without ever overriding an author's own sizing.
+ * Style values to pin a cloned scene to the box its source measured while live. Positioned
+ * absolutely inside a full-frame staging box, the clone keeps the live size and position
+ * instead of collapsing to 0x0 when sized only by `inset:0`.
  */
 export function clonePinStyleFor(rect: {
   left: number;
@@ -106,28 +102,47 @@ export function clonePinStyleFor(rect: {
   };
 }
 
+type Box = { left: number; top: number; width: number; height: number };
+
 /**
- * Wraps a scene clone in childless copies of its ancestors below `<body>`, so inherited and
- * composition-scoped styles resolve on the clone as they do live. Returns the outermost copy
- * and the live element it copies.
+ * Wraps a scene clone in childless copies of its ancestors below `<body>`: they carry the
+ * inherited styles, custom properties and composition-scoped selectors, never layout. Inner
+ * copies get no box; the outermost becomes a full-frame box with no border, transform or
+ * animation. Returns that outermost copy.
  */
 function stageWithAncestors(
   scene: HTMLElement,
   clone: HTMLElement,
-): { root: HTMLElement; liveRoot: HTMLElement } {
+  width: number,
+  height: number,
+): HTMLElement {
   let root = clone;
-  let liveRoot = scene;
   for (
     let el = scene.parentElement;
     el && el !== document.body && el !== document.documentElement;
     el = el.parentElement
   ) {
     const shell = el.cloneNode(false) as HTMLElement;
+    shell.style.display = "contents";
     shell.appendChild(root);
     root = shell;
-    liveRoot = el;
   }
-  return { root, liveRoot };
+  if (root !== clone) {
+    Object.assign(root.style, {
+      display: "block",
+      position: "absolute",
+      left: "0px",
+      top: "0px",
+      width: `${width}px`,
+      height: `${height}px`,
+      margin: "0",
+      padding: "0",
+      border: "0",
+      transform: "none",
+      animation: "none",
+    });
+  }
+  return root;
 }
 
 export function isPageSideCompositingSupported(): boolean {
@@ -253,8 +268,8 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
 
   let currentActive: ResolvedTransition | null = null;
   let currentProgress = 0;
-  let fromRect: DOMRect | null = null;
-  let toRect: DOMRect | null = null;
+  let fromRect: Box | null = null;
+  let toRect: Box | null = null;
 
   type PendingWindow = Window & {
     __hf_page_composite_pending?: boolean;
@@ -288,7 +303,7 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
     // paint record" and the shader degrades to a hard cut. The shader blends from
     // full-opacity textures via u_progress, so force the clones visible. Cf.
     // forceSceneVisibleInClone (html2canvas path).
-    const rects: DOMRect[] = [];
+    const rects: Box[] = [];
     for (const [live, staging] of [
       [fromEl, fromStaging],
       [toEl, toStaging],
@@ -300,13 +315,11 @@ export function installPageSideCompositor(options: PageCompositorInstallOptions)
         el.style.opacity = "1";
         el.style.visibility = "visible";
       });
-      // The outermost copy is pinned to its live box: sized only by `inset:0`, it would
-      // otherwise collapse to 0x0 inside the staging canvas and blank the texture.
-      const { root, liveRoot } = stageWithAncestors(live, clone);
-      const rect = liveRoot.getBoundingClientRect();
-      Object.assign(root.style, { position: "absolute", ...clonePinStyleFor(rect) });
+      const rect = live.getBoundingClientRect();
+      Object.assign(clone.style, { position: "absolute", ...clonePinStyleFor(rect) });
+      const root = stageWithAncestors(live, clone, width, height);
       staging.appendChild(root);
-      rects.push(rect);
+      rects.push(root === clone ? rect : { left: 0, top: 0, width, height });
     }
     [fromRect, toRect] = rects;
 

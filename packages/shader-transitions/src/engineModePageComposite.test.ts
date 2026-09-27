@@ -192,8 +192,9 @@ describe("page-side compositor scene copies", () => {
     vi.unstubAllGlobals();
   });
 
-  const BOX = {
+  const BOX: Record<string, { left: number; top: number; width: number; height: number }> = {
     main: { left: 0, top: 0, width: 640, height: 360 },
+    stage: { left: 0, top: 0, width: 0, height: 0 },
     scene: { left: 160, top: 90, width: 320, height: 180 },
   };
 
@@ -209,7 +210,7 @@ describe("page-side compositor scene copies", () => {
       return null;
     }
     getBoundingClientRect() {
-      return this.id === "main" ? BOX.main : BOX.scene;
+      return BOX[this.id] ?? BOX.scene;
     }
     cloneNode(deep: boolean) {
       const copy = new FakeEl(`${this.id}-copy`, this);
@@ -226,7 +227,7 @@ describe("page-side compositor scene copies", () => {
     }
   }
 
-  function installTransparentInsetFilm(opts: { failDraw?: boolean } = {}) {
+  function installTransparentInsetFilm(opts: { failDraw?: boolean; underBody?: boolean } = {}) {
     const calls: Array<{ canvas: number; op: string; args: unknown[] }> = [];
     const gl = new Proxy(fakeWebGl(), {
       get: (target, key) => {
@@ -274,10 +275,13 @@ describe("page-side compositor scene copies", () => {
       return canvas;
     };
     const body = new FakeEl("body");
-    const main = body.appendChild(new FakeEl("main"));
+    // An unsized wrapper between the composition root and the scenes, as in authored films.
+    const parent = opts.underBody
+      ? body
+      : body.appendChild(new FakeEl("main")).appendChild(new FakeEl("stage"));
     const scenes = new Map([
-      ["scene-a", main.appendChild(new FakeEl("scene-a"))],
-      ["scene-b", main.appendChild(new FakeEl("scene-b"))],
+      ["scene-a", parent.appendChild(new FakeEl("scene-a"))],
+      ["scene-b", parent.appendChild(new FakeEl("scene-b"))],
     ]);
     let startPolling: (() => void) | undefined;
     const hf = { seek: vi.fn() };
@@ -316,7 +320,7 @@ describe("page-side compositor scene copies", () => {
     return { calls, composite, overlay };
   }
 
-  it("stages each scene copy inside a copy of its composition root, drawn at the root's box", async () => {
+  it("stages each scene copy, pinned to its live box, inside style-only ancestor copies", async () => {
     const { calls, composite } = installTransparentInsetFilm();
     expect(await composite(1.2)).toBe(true);
     const draws = calls.filter((c) => c.op === "drawElementImage");
@@ -327,11 +331,34 @@ describe("page-side compositor scene copies", () => {
     ] as const) {
       const root = draws[index]?.args[0] as FakeEl;
       expect(root.copyOf?.id).toBe("main");
-      expect(root.children.map((c) => c.copyOf?.id)).toEqual([sceneId]);
-      // The scene copy keeps its own authored box; only the root copy is pinned.
-      expect(root.children[0]?.style.left).toBeUndefined();
+      expect(root.style).toMatchObject({
+        left: "0px",
+        top: "0px",
+        width: "640px",
+        height: "360px",
+      });
+      expect(root.style).toMatchObject({ transform: "none", animation: "none", border: "0" });
+      const stage = root.children[0]!;
+      expect(stage.copyOf?.id).toBe("stage");
+      expect(stage.style.display).toBe("contents");
+      expect(stage.children.map((c) => c.copyOf?.id)).toEqual([sceneId]);
+      expect(stage.children[0]?.style).toMatchObject({
+        position: "absolute",
+        left: "160px",
+        top: "90px",
+        width: "320px",
+        height: "180px",
+      });
       expect(draws[index]?.args.slice(1)).toEqual([0, 0, 640, 360]);
     }
+  });
+
+  it("draws a scene staged directly under body at its own box", async () => {
+    const { calls, composite } = installTransparentInsetFilm({ underBody: true });
+    expect(await composite(1.2)).toBe(true);
+    const draws = calls.filter((c) => c.op === "drawElementImage");
+    expect(draws.map((d) => (d.args[0] as FakeEl).copyOf?.id)).toEqual(["scene-a", "scene-b"]);
+    for (const draw of draws) expect(draw.args.slice(1)).toEqual([160, 90, 320, 180]);
   });
 
   it("clears both staging bitmaps after the textures are uploaded", async () => {
