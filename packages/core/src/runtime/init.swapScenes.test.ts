@@ -1110,6 +1110,17 @@ window.__timelines.a = tl;`;
     await expect(swap).rejects.toThrow("a scene changed while this swap waited");
   });
 
+  it("swaps a scene whose script is last in the page though something is appended after it during the wait", async () => {
+    // As after an earlier swap of the scene, which appends its new script at the end of the page.
+    const lastScript = () =>
+      document.body.appendChild(document.querySelector('script[data-hf-scene="a"]')!);
+    const { swap, answer } = await bootWithPendingCaptions(undefined, lastScript);
+    document.body.appendChild(document.createElement("div"));
+    answer(new Response("null", { status: 404 }));
+    await swap;
+    expect(sceneHost("a").querySelector(".caption-group")).not.toBeNull();
+  });
+
   it("refuses a swap whose signal was aborted before the call, changing nothing", async () => {
     const { root } = trackingRoot();
     boot([A1, B], root);
@@ -1197,6 +1208,21 @@ window.__timelines.a = tl;`;
     Object.assign(made.a1!, { revert: () => void document.body.appendChild(sceneHost("a")) });
     boot([A1, B], root);
     await tick();
+    await expect(window.__hfSwapScenes!(preview([A2, B]).html)).rejects.toThrow(
+      "a scene changed while this swap waited",
+    );
+    delete (window as unknown as { gsap?: unknown }).gsap;
+  });
+
+  it("refuses when stopping a scene's timeline moves the scene's wrapper out of the film", async () => {
+    const { root } = trackingRoot();
+    (window as unknown as { gsap: unknown }).gsap = { set: () => {} };
+    const wrapper = document.createElement("div");
+    Object.assign(made.a1!, { revert: () => void document.body.appendChild(wrapper) });
+    boot([A1, B], root);
+    await tick();
+    sceneHost("a").before(wrapper);
+    wrapper.append(sceneHost("a"));
     await expect(window.__hfSwapScenes!(preview([A2, B]).html)).rejects.toThrow(
       "a scene changed while this swap waited",
     );

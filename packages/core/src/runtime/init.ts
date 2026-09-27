@@ -3286,7 +3286,8 @@ export function initSandboxRuntimeModular(): void {
       return {
         name,
         oldParts,
-        slots: oldParts.map((el) => [el.parentNode, el.nextSibling]),
+        homes: oldParts.map((el) => el.parentNode),
+        hostNext: oldHost.nextSibling,
         inFilm: !!resolveRootCompositionElement()?.contains(oldHost),
         newParts,
         oldHost,
@@ -3305,12 +3306,11 @@ export function initSandboxRuntimeModular(): void {
     // A data handler or a revert callback can replace or move a scene's parts; the swap would then lose the scene.
     const refuseReplacedScenes = () => {
       const film = resolveRootCompositionElement();
-      const moved = ({ oldParts, slots, oldHost, inFilm }: (typeof swaps)[number]) =>
+      // The host's place is checked; old scripts are removed and new ones appended, so theirs never matters.
+      const moved = ({ oldParts, homes, oldHost, hostNext, inFilm }: (typeof swaps)[number]) =>
         (inFilm && !film?.contains(oldHost)) ||
-        oldParts.some(
-          (el, i) =>
-            !el.isConnected || el.parentNode !== slots[i]![0] || el.nextSibling !== slots[i]![1],
-        );
+        oldHost.nextSibling !== hostNext ||
+        oldParts.some((el, i) => !el.isConnected || el.parentNode !== homes[i]);
       if (swaps.some(moved)) {
         throw new Error("a scene changed while this swap waited");
       }
