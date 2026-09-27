@@ -173,7 +173,7 @@ const cssText = () =>
   [...document.head.querySelectorAll("style")].map((s) => s.textContent).join("");
 
 // Boots A1 and B, then starts swapping in a captioned A whose caption overrides have not arrived.
-async function bootWithPendingCaptions(signal?: AbortSignal) {
+async function bootWithPendingCaptions(signal?: AbortSignal, arrange = () => {}) {
   const { root } = trackingRoot();
   (window as unknown as { gsap: unknown }).gsap = { set: () => {} };
   let answer: (r: Response) => void = () => {};
@@ -182,6 +182,7 @@ async function bootWithPendingCaptions(signal?: AbortSignal) {
   );
   boot([A1, B], root);
   await tick();
+  arrange();
   const before = document.documentElement.innerHTML;
   const captions: Scene = { ...A2, body: '<div class="caption-group"><span>w</span></div>' };
   const swap = window.__hfSwapScenes!(preview([captions, B]).html, signal);
@@ -1087,6 +1088,39 @@ window.__timelines.a = tl;`;
     answer(new Response("null", { status: 404 }));
     await expect(swap).rejects.toThrow("a scene changed while this swap waited");
     expect(manifest()).toBe(before);
+  });
+
+  it("refuses a swap whose scene's wrapper left the film while its caption overrides loaded", async () => {
+    const wrapper = document.createElement("div");
+    const wrap = () => {
+      sceneHost("a").before(wrapper);
+      wrapper.append(sceneHost("a"));
+    };
+    const { swap, answer } = await bootWithPendingCaptions(undefined, wrap);
+    // The host keeps its parent; the parent leaves the film.
+    document.body.appendChild(wrapper);
+    answer(new Response("null", { status: 404 }));
+    await expect(swap).rejects.toThrow("a scene changed while this swap waited");
+  });
+
+  it("refuses a swap whose scene moved to another place in its parent while its caption overrides loaded", async () => {
+    const { swap, answer } = await bootWithPendingCaptions();
+    sceneHost("a").parentElement!.appendChild(sceneHost("a"));
+    answer(new Response("null", { status: 404 }));
+    await expect(swap).rejects.toThrow("a scene changed while this swap waited");
+  });
+
+  it("refuses a swap whose signal was aborted before the call, changing nothing", async () => {
+    const { root } = trackingRoot();
+    boot([A1, B], root);
+    await tick();
+    const before = document.documentElement.innerHTML;
+    const cancel = new AbortController();
+    cancel.abort();
+    await expect(window.__hfSwapScenes!(preview([A2, B]).html, cancel.signal)).rejects.toThrow(
+      "the swap was cancelled",
+    );
+    expect(document.documentElement.innerHTML).toBe(before);
   });
 
   it("refuses a swap the caller cancelled while its caption overrides loaded, changing nothing", async () => {

@@ -3237,10 +3237,6 @@ export function initSandboxRuntimeModular(): void {
   // Swap edited scenes in place from a rebuilt preview document. Refuses before changing anything unless
   // the documents differ only inside existing scenes; a later failure is left to the caller's reload.
   const swapScenes = async (html: string, signal?: AbortSignal): Promise<void> => {
-    const refuseCancelled = () => {
-      if (signal?.aborted) throw new Error("the swap was cancelled");
-    };
-    refuseCancelled();
     const generation = sceneSwapGeneration;
     const next = new DOMParser().parseFromString(html, "text/html");
     const liveParts = readSceneParts(document);
@@ -3290,7 +3286,8 @@ export function initSandboxRuntimeModular(): void {
       return {
         name,
         oldParts,
-        homes: oldParts.map((el) => el.parentNode),
+        slots: oldParts.map((el) => [el.parentNode, el.nextSibling]),
+        inFilm: !!resolveRootCompositionElement()?.contains(oldHost),
         newParts,
         oldHost,
         newHost,
@@ -3301,14 +3298,19 @@ export function initSandboxRuntimeModular(): void {
       ? await fetchCaptionOverrides()
       : [];
     if (state.tornDown) throw new Error("the preview was torn down during the swap");
-    refuseCancelled();
+    if (signal?.aborted) throw new Error("the swap was cancelled");
     if (generation !== sceneSwapGeneration) {
       throw new Error("the preview changed while this swap waited");
     }
     // A data handler or a revert callback can replace or move a scene's parts; the swap would then lose the scene.
     const refuseReplacedScenes = () => {
-      const moved = ({ oldParts, homes }: (typeof swaps)[number]) =>
-        oldParts.some((el, i) => !el.isConnected || el.parentNode !== homes[i]);
+      const film = resolveRootCompositionElement();
+      const moved = ({ oldParts, slots, oldHost, inFilm }: (typeof swaps)[number]) =>
+        (inFilm && !film?.contains(oldHost)) ||
+        oldParts.some(
+          (el, i) =>
+            !el.isConnected || el.parentNode !== slots[i]![0] || el.nextSibling !== slots[i]![1],
+        );
       if (swaps.some(moved)) {
         throw new Error("a scene changed while this swap waited");
       }
