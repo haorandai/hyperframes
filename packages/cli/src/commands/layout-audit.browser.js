@@ -472,7 +472,8 @@
   }
 
   function textOverflowIssues(element, root, rootRect, time, tolerance, clippedIssue) {
-    const textRect = textRectFor(element, true);
+    const lineRects = textClientRects(element, true).map(toRect);
+    const textRect = unionRects(lineRects);
     if (!textRect) return [];
     const text = textContentFor(element, true);
     const selector = selectorFor(element);
@@ -480,6 +481,9 @@
 
     const container = nearestConstraint(element, root, rootRect);
     const containerRect = container === root ? rootRect : toRect(container.getBoundingClientRect());
+    // A row that never enters the box is parked outside a window. A cut-off still meets the box.
+    const linesInBox = lineRects.filter((line) => intersectionArea(line, containerRect) > 0);
+    const linesInBoxRect = unionRects(linesInBox);
     // Glyph ink (ascenders / descenders / accents / heavy display faces) routinely exceeds a
     // snug line-height box by a few px, proportional to font size. When the constraining box
     // does NOT clip, that vertical spill is normal typography — it shows in the padding, nothing
@@ -493,7 +497,9 @@
     const verticalTolerance = containerClips
       ? tolerance
       : Math.max(tolerance, parsePx(elementStyle.fontSize) * 0.2);
-    const containerOverflow = overflowFor(textRect, containerRect, tolerance, verticalTolerance);
+    const containerOverflow = linesInBoxRect
+      ? overflowFor(linesInBoxRect, containerRect, tolerance, verticalTolerance)
+      : null;
     const billedAsClippedText =
       container === element &&
       clippedIssue != null &&
@@ -510,11 +516,11 @@
         containerSelector: selectorFor(container),
         text,
         message: "Text extends outside its nearest visual/container box.",
-        rect: textRect,
+        rect: linesInBoxRect,
         containerRect,
         overflow: containerOverflow,
         fixHint: textOverflowFixHint(
-          textRect,
+          linesInBoxRect,
           containerRect,
           containerOverflow,
           parsePx(style.fontSize),

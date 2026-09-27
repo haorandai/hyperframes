@@ -664,6 +664,34 @@ describe("layout-audit.browser", () => {
     expect(runAudit().some((issue) => issue.code === "text_box_overflow")).toBe(false);
   });
 
+  it("does not flag a line parked entirely outside a clipping window", () => {
+    document.body.innerHTML = `
+      <div id="root" data-composition-id="main" data-width="640" data-height="360">
+        <div id="card">
+          <div id="headline">9</div>
+        </div>
+      </div>
+    `;
+    installGeometry(
+      {
+        root: rect({ left: 0, top: 0, width: 640, height: 360 }),
+        card: rect({ left: 40, top: 60, width: 40, height: 20 }),
+        headline: rect({ left: 40, top: 0, width: 40, height: 20 }),
+        text: rect({ left: 40, top: 0, width: 40, height: 20 }),
+      },
+      {
+        card: {
+          overflow: "hidden",
+          overflowX: "hidden",
+          overflowY: "hidden",
+        },
+      },
+    );
+    installAuditScript();
+
+    expect(runAudit().some((issue) => issue.code === "text_box_overflow")).toBe(false);
+  });
+
   it("keeps auditing visible descendants beyond the second element", () => {
     document.body.innerHTML = `
       <div id="root" data-composition-id="main" data-width="640" data-height="360">
