@@ -4,9 +4,9 @@
 
   A jagged, fibrous paper tear travels across the frame and splits one scene
   into the next. The "from" sheet sits on top, its torn edge showing a
-  6-14 px band of white paper core with a feathered outer edge; the "to"
-  layer fills the whole stage underneath. As the tear runs, the "from" sheet
-  lifts away toward the tear direction on a growing shadow.
+  6-14 px band of paper core in the tone color with a feathered outer edge;
+  the "to" layer fills the whole stage underneath. As the tear runs, the
+  "from" sheet lifts away toward the tear direction on a growing shadow.
 
   Both scenes are SLOTS. Callers supply content by placing inert templates
   anywhere in the HOST page (templates never render, and the runtime wipes
@@ -336,14 +336,14 @@
               });
             }
 
-            // side: which side of the boundary still shows "from" (ltr tears
-            // from the left, so "from" lives on the right; rtl mirrors).
             var maxOffset = edge.reduce(function (m, row) {
               return Math.max(m, Math.abs(row.offset));
             }, 0);
             // Clears the worst row plus the core band and its feather, so no
             // edge is on screen at p=0 or p=1.
             var MARGIN = maxOffset + RIM_MAX_PX * PX + 0.5;
+            // side: which side of the boundary still shows "from" (ltr tears
+            // from the left, so "from" lives on the right; rtl mirrors).
             var side = direction === "left-to-right" ? "right" : "left";
             var START = side === "right" ? -MARGIN : 100 + MARGIN;
             var END = side === "right" ? 100 + MARGIN : -MARGIN;

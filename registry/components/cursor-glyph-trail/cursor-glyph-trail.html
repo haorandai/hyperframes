@@ -437,12 +437,7 @@
           root.style.setProperty("--cgt-accent", accentColors[vars.accent] || accentColors.green);
           var exit = vars.exit === "fade" || vars.exit === "up" ? vars.exit : "none";
 
-          var slot = null;
-          try {
-            slot = document.querySelector('template[data-slot="cursor-glyph-trail-actor"]');
-          } catch (error) {
-            slot = null;
-          }
+          var slot = document.querySelector('template[data-slot="cursor-glyph-trail-actor"]');
           if (slot) {
             var slotBox = document.createElement("div");
             slotBox.className = "cgt-slot";

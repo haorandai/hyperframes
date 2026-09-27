@@ -4,7 +4,7 @@
 
   Concept: snowflakes fall from top to bottom in a continuous seamless loop, drifting
   side to side, meant to sit on a track above real footage rather than as an opaque
-  background. Each flake draws one depth value that sets size and opacity continuously
+  background. Each flake draws one depth value that sets size and opacity
   and buckets it into one of three fall-speed layers (near/mid/far); the loop invariant
   already forces fall speed to an integer number of cycles per mount, so three
   deliberately distinct per-layer counts keep near/far separation even on a short mount.
@@ -149,7 +149,7 @@
         var fragment = document.createDocumentFragment();
         for (var i = 0; i < COUNT; i++) {
           var laneX = frac(i * PHI + 0.07);
-          // One depth draw drives size and opacity continuously, and buckets the flake into
+          // One depth draw drives size and opacity, and buckets the flake into
           // one of three fall-speed layers (far/mid/near). Layer cycle counts are offsets
           // from the shared base, not products of it, so they stay distinct on any mount.
           var depth = rnd(i);
