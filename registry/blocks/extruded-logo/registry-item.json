@@ -15,6 +15,16 @@
       "path": "extruded-logo.html",
       "target": "compositions/extruded-logo.html",
       "type": "hyperframes:composition"
+    },
+    {
+      "path": "assets/fonts/Geist-Bold.typeface.json",
+      "target": "compositions/assets/fonts/Geist-Bold.typeface.json",
+      "type": "hyperframes:asset"
+    },
+    {
+      "path": "assets/fonts/Geist-OFL.txt",
+      "target": "compositions/assets/fonts/Geist-OFL.txt",
+      "type": "hyperframes:asset"
     }
   ]
 }

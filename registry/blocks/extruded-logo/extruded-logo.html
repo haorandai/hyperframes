@@ -8,9 +8,9 @@
   lang="en"
   data-composition-variables='[
     { "id": "text", "type": "string", "role": "content", "label": "Word or lettermark", "default": "NOVA", "maxLength": 8 },
-    { "id": "tagline", "type": "string", "role": "content", "label": "Tagline", "default": "Built for what comes next", "maxLength": 40 },
+    { "id": "tagline", "type": "string", "role": "content", "label": "Tagline", "default": "Ships Thursday", "maxLength": 40 },
     { "id": "finish", "type": "enum", "role": "style", "label": "Finish", "default": "chrome", "options": [ { "value": "chrome", "label": "Chrome" }, { "value": "gold", "label": "Gold" }, { "value": "matte", "label": "Matte clay" } ] },
-    { "id": "rim_color", "type": "color", "role": "style", "label": "Rim light", "default": "#7c8cff" },
+    { "id": "rim_color", "type": "color", "role": "style", "label": "Rim light", "default": "#fff4e6" },
     { "id": "background", "type": "color", "role": "style", "label": "Backdrop", "default": "#0c0d12" }
   ]'
 >
@@ -204,7 +204,7 @@
       mirror.position.set(0, 1, 9);
       mirror.lookAt(0, 1, 0);
       studio.add(mirror);
-      softbox(9, 1.4, 0, 0.5, -7, hex(V.rim_color, "#7c8cff"), 2);
+      softbox(9, 1.4, 0, 0.5, -7, hex(V.rim_color, "#fff4e6"), 2);
       const pmrem = new THREE.PMREMGenerator(renderer);
       scene.environment = pmrem.fromScene(studio, 0.01).texture;
 
@@ -212,7 +212,7 @@
       camera.position.set(0, 0.9, 11);
       camera.lookAt(0, 0.35, 0);
 
-      const rim = new THREE.DirectionalLight(new THREE.Color(hex(V.rim_color, "#7c8cff")), 5);
+      const rim = new THREE.DirectionalLight(new THREE.Color(hex(V.rim_color, "#fff4e6")), 5);
       rim.position.set(0, 3, -6);
       scene.add(rim);
       const key = new THREE.DirectionalLight(0xffffff, 1.4);
@@ -226,8 +226,14 @@
       };
       const material = new THREE.MeshStandardMaterial(finishes[V.finish] || finishes.chrome);
 
+      // Beside this file when mounted; a runtime without assetUrl keeps the plain path.
+      const assetUrl = (path) =>
+        typeof __hyperframes !== "undefined" && __hyperframes.assetUrl
+          ? __hyperframes.assetUrl(path)
+          : path;
+      // Geist Bold (OFL), basic Latin only, converted to three.js typeface JSON.
       const font = await new FontLoader().loadAsync(
-        "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/fonts/helvetiker_bold.typeface.json",
+        assetUrl("assets/fonts/Geist-Bold.typeface.json"),
       );
       const text = String(V.text || "NOVA")
         .toUpperCase()
@@ -314,7 +320,7 @@
           p.visible = t >= 0.1 * k + i * 0.13 * k;
         });
         const swing = easeInOut((t - 0.9 * k) / (D - 0.9 * k - 0.7 * k));
-        word.rotation.y = -0.42 + swing * 0.62;
+        word.rotation.y = -0.42 + swing * 0.42;
         word.rotation.x = 0.04 - swing * 0.04;
         renderer.render(scene, camera);
       };
