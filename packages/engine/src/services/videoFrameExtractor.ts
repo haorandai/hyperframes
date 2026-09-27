@@ -913,8 +913,9 @@ export async function extractVideoFramesRange(
     vfFilters.push("format=nv12");
   }
   if (sampleCfrAtOutputFps) {
-    // Each slot takes the last frame starting at or before its time. On timebases of 2 ms or finer a
-    // half-tick shift absorbs container rounding (WebM/MKV store whole ms); coarser ones are exact.
+    // Each slot takes the last frame starting at or before its time, within half a tick.
+    // Ticks of 2 ms or finer shift half a tick for container rounding (WebM/MKV use whole ms);
+    // 1/fps ticks don't.
     vfFilters.push(
       "settb=intb/2",
       "setpts=PTS-lte(TB\\,0.001)",
