@@ -14,13 +14,14 @@
     color                            marker ink
     target_x, target_y, target_w, target_h (% of host box)  the region being marked
 
-  envelope (default 4.2s): glide in 0-0.8s, touch down, draw 0.9-2.0s, lift,
-  elastic hold, exit in the last 0.55s. Shorter durations compress every beat evenly.
+  envelope (default 2.95s): glide in 0-0.5s, touch down, draw 0.7-1.8s, lift and step
+  clear of the mark, hold, exit in the last 0.35s. Shorter durations compress every beat evenly.
+  The ink is a tapered marker stroke: thick where the pen moves slowly, thin where it is fast.
 -->
 <html
   lang="en"
   data-composition-id="cursor-annotate"
-  data-composition-duration="4.2"
+  data-composition-duration="2.95"
   data-composition-variables='[
     { "id": "shape", "type": "enum", "role": "style", "label": "Mark", "default": "circle", "options": [ { "value": "circle", "label": "Loose loop" }, { "value": "underline", "label": "Underline" }, { "value": "arrow", "label": "Arrow" } ] },
     { "id": "color", "type": "color", "role": "style", "label": "Ink", "default": "#f43f5e" },
@@ -52,10 +53,7 @@
           overflow: visible;
         }
         .ca-ink path {
-          fill: none;
-          stroke: var(--ca-ink, #f43f5e);
-          stroke-linecap: round;
-          stroke-linejoin: round;
+          fill: var(--ca-ink, #f43f5e);
         }
         .ca-pen {
           position: absolute;
@@ -76,7 +74,7 @@
         }
       </style>
 
-      <div id="root" data-composition-id="cursor-annotate" data-duration="4.2">
+      <div id="root" data-composition-id="cursor-annotate" data-duration="2.95">
         <svg class="ca-ink" id="ca-ink" aria-hidden="true"></svg>
         <div class="ca-pen" id="ca-pen" aria-hidden="true">
           <svg viewBox="-40 -200 240 240" aria-hidden="true">
@@ -91,9 +89,9 @@
                   width="62"
                   height="18"
                   rx="4"
-                  fill="#f6f6f8"
-                  stroke="#1d1d22"
-                  stroke-width="1.5"
+                  fill="#ffffff"
+                  stroke="#141414"
+                  stroke-width="2"
                 />
                 <rect x="36" y="-9" width="8" height="18" id="ca-pen-band" />
                 <rect x="91" y="-9.5" width="16" height="19" rx="6" fill="#1d1d22" />
@@ -145,7 +143,7 @@
           var duration = Math.max(
             0.001,
             parseFloat(
-              root.dataset.duration || html.getAttribute("data-composition-duration") || "4.2",
+              root.dataset.duration || html.getAttribute("data-composition-duration") || "2.95",
             ),
           );
           var shape =
@@ -166,14 +164,7 @@
           document.getElementById("ca-pen-tip").setAttribute("fill", color);
           document.getElementById("ca-pen-band").setAttribute("fill", color);
 
-          function polyline(points) {
-            return points
-              .map(function (p, i) {
-                return (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1);
-              })
-              .join(" ");
-          }
-
+          // Each mark is one or more strokes; a stroke maps u in [0,1] to a point on the page.
           // A hand loop: starts upper-left, runs a little past its start and wider on the way out.
           function loopStroke() {
             var cx = box.x + box.w / 2;
@@ -181,88 +172,143 @@
             var rx = box.w * 0.62 + 18 * unit;
             var ry = box.h * 0.66 + 16 * unit;
             var tilt = (-5 * Math.PI) / 180;
-            var start = -2.55;
-            var sweep = Math.PI * 2 + 0.5;
-            var pts = [];
-            for (var i = 0; i <= 140; i++) {
-              var u = i / 140;
-              var a = start + sweep * u;
-              var r = (1 + 0.035 * Math.sin(3 * a + 1.1)) * (1 + 0.08 * u);
-              var ex = Math.cos(a) * rx * r;
-              var ey = Math.sin(a) * ry * r;
-              pts.push([
-                cx + ex * Math.cos(tilt) - ey * Math.sin(tilt),
-                cy + ex * Math.sin(tilt) + ey * Math.cos(tilt),
-              ]);
-            }
-            return [polyline(pts)];
+            return [
+              function (u) {
+                var a = -2.55 + (Math.PI * 2 + 0.5) * u;
+                var r = (1 + 0.035 * Math.sin(3 * a + 1.1)) * (1 + 0.08 * u);
+                var ex = Math.cos(a) * rx * r;
+                var ey = Math.sin(a) * ry * r;
+                return [
+                  cx + ex * Math.cos(tilt) - ey * Math.sin(tilt),
+                  cy + ex * Math.sin(tilt) + ey * Math.cos(tilt),
+                ];
+              },
+            ];
           }
 
           function underlineStroke() {
             var y = box.y + box.h + 14 * unit;
             var x0 = box.x - box.w * 0.04;
             var span = box.w * 1.08;
-            var pts = [];
-            for (var i = 0; i <= 48; i++) {
-              var u = i / 48;
-              pts.push([
-                x0 + span * u,
-                y + 4 * unit * Math.sin(u * Math.PI * 1.3) - 12 * unit * u * u,
-              ]);
-            }
-            return [polyline(pts)];
+            return [
+              function (u) {
+                return [
+                  x0 + span * u,
+                  y + 4 * unit * Math.sin(u * Math.PI * 1.3) - 12 * unit * u * u,
+                ];
+              },
+            ];
           }
 
-          // Shaft from below-left, curving onto the region; the head is a second stroke.
+          function smooth(x) {
+            return x * x * (3 - 2 * x);
+          }
+          function lerp(a, b, u) {
+            return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u];
+          }
+
+          // Shaft from below-left, curving onto the region; the head is one V that slows into its point.
           function arrowStrokes() {
-            var tip = { x: box.x - 10 * unit, y: box.y + box.h + 8 * unit };
-            var from = {
-              x: tip.x - Math.max(160 * unit, box.w * 0.7),
-              y: tip.y + Math.max(120 * unit, box.h * 0.9),
-            };
-            var ctrl = { x: from.x + (tip.x - from.x) * 0.15, y: tip.y + (from.y - tip.y) * 0.05 };
-            var pts = [];
-            for (var i = 0; i <= 40; i++) {
-              var u = i / 40;
-              var v = 1 - u;
-              pts.push([
-                v * v * from.x + 2 * v * u * ctrl.x + u * u * tip.x,
-                v * v * from.y + 2 * v * u * ctrl.y + u * u * tip.y,
-              ]);
-            }
-            var back = Math.atan2(ctrl.y - tip.y, ctrl.x - tip.x);
+            var tip = [box.x - 10 * unit, box.y + box.h + 8 * unit];
+            var from = [
+              tip[0] - Math.max(160 * unit, box.w * 0.7),
+              tip[1] + Math.max(120 * unit, box.h * 0.9),
+            ];
+            var ctrl = [from[0] + (tip[0] - from[0]) * 0.15, tip[1] + (from[1] - tip[1]) * 0.05];
+            var back = Math.atan2(ctrl[1] - tip[1], ctrl[0] - tip[0]);
             var len = 30 * unit;
             var barb = function (spread) {
-              return [tip.x + Math.cos(back + spread) * len, tip.y + Math.sin(back + spread) * len];
+              return [tip[0] + Math.cos(back + spread) * len, tip[1] + Math.sin(back + spread) * len];
             };
-            return [polyline(pts), polyline([barb(0.5), [tip.x, tip.y], barb(-0.5)])];
+            return [
+              function (u) {
+                var v = 1 - u;
+                return [
+                  v * v * from[0] + 2 * v * u * ctrl[0] + u * u * tip[0],
+                  v * v * from[1] + 2 * v * u * ctrl[1] + u * u * tip[1],
+                ];
+              },
+              function (u) {
+                return u < 0.5
+                  ? lerp(barb(0.5), tip, smooth(u * 2))
+                  : lerp(tip, barb(-0.5), smooth(u * 2 - 1));
+              },
+            ];
           }
 
-          var strokeDs =
+          var paths =
             shape === "underline"
               ? underlineStroke()
               : shape === "arrow"
                 ? arrowStrokes()
                 : loopStroke();
-          var WIDTH = 11 * unit;
-          var strokes = strokeDs.map(function (d) {
-            var thin = document.createElementNS(SVG_NS, "path");
-            var thick = document.createElementNS(SVG_NS, "path");
-            thin.setAttribute("d", d);
-            thick.setAttribute("d", d);
-            thin.setAttribute("stroke-width", (WIDTH * 0.62).toFixed(2));
-            thick.setAttribute("stroke-width", WIDTH.toFixed(2));
-            ink.appendChild(thin);
-            ink.appendChild(thick);
-            return { thin: thin, thick: thick, length: thin.getTotalLength() };
+
+          // Beats at the default 2.95s; a shorter composition compresses them evenly.
+          var squeeze = Math.min(1, duration / 2.95);
+          var T_LAND = 0.5 * squeeze;
+          var T_DRAW = 0.7 * squeeze;
+          var HOP = 0.2 * squeeze;
+          var ASIDE_TIME = 0.35 * squeeze;
+          var EXIT_TIME = 0.35 * squeeze;
+          var drawTotal = (shape === "circle" ? 1.1 : shape === "arrow" ? 0.95 : 0.6) * squeeze;
+
+          var glide = gsap.parseEase("power3.out");
+          var strokeEase = gsap.parseEase("sine.inOut");
+          var hop = gsap.parseEase("power2.inOut");
+          var aside = gsap.parseEase("power2.out");
+          var leave = gsap.parseEase("power2.in");
+
+          function clamp01(u) {
+            return u < 0 ? 0 : u > 1 ? 1 : u;
+          }
+          function arcLength(fn) {
+            var sum = 0;
+            var prev = fn(0);
+            for (var i = 1; i <= 200; i++) {
+              var p = fn(i / 200);
+              sum += Math.hypot(p[0] - prev[0], p[1] - prev[1]);
+              prev = p;
+            }
+            return sum;
+          }
+
+          // Samples at even steps of stroke time, so spacing between samples is the pen's speed.
+          // Width follows speed (7u slow, 3u fast) and thins back to 3u as the pen lifts.
+          var STEPS = 160;
+          var MIN_W = 3 * unit;
+          var MAX_W = 7 * unit;
+          var strokes = paths.map(function (fn) {
+            var pts = [];
+            for (var k = 0; k <= STEPS; k++) {
+              var u = strokeEase(k / STEPS);
+              var p = fn(u);
+              var a = fn(Math.max(0, u - 1e-4));
+              var b = fn(Math.min(1, u + 1e-4));
+              var tlen = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+              pts.push({ x: p[0], y: p[1], nx: -(b[1] - a[1]) / tlen, ny: (b[0] - a[0]) / tlen });
+            }
+            pts.forEach(function (p, k) {
+              var a = pts[Math.max(0, k - 1)];
+              var b = pts[Math.min(STEPS, k + 1)];
+              p.speed = Math.hypot(b.x - a.x, b.y - a.y);
+            });
+            return { pts: pts, length: arcLength(fn) };
+          });
+          var topSpeed = 0;
+          strokes.forEach(function (s) {
+            s.pts.forEach(function (p) {
+              topSpeed = Math.max(topSpeed, p.speed);
+            });
+          });
+          strokes.forEach(function (s) {
+            s.pts.forEach(function (p, k) {
+              var lift = 1 - smooth(clamp01((k / STEPS - 0.82) / 0.18));
+              p.w = MIN_W + (MAX_W - MIN_W) * (1 - p.speed / topSpeed) * lift;
+            });
+            s.el = document.createElementNS(SVG_NS, "path");
+            ink.appendChild(s.el);
           });
 
-          // Beats at the default 4.2s; a shorter composition compresses them evenly.
-          var squeeze = Math.min(1, duration / 3.3);
-          var T_LAND = 0.8 * squeeze;
-          var T_DRAW = 0.9 * squeeze;
-          var HOP = 0.2 * squeeze;
-          var drawTotal = (shape === "circle" ? 1.1 : shape === "arrow" ? 0.95 : 0.6) * squeeze;
           var totalLength = strokes.reduce(function (sum, s) {
             return sum + s.length;
           }, 0);
@@ -274,26 +320,92 @@
             cursorT += span + (i < strokes.length - 1 ? HOP : 0);
           });
           var T_LIFT = cursorT;
-          var T_EXIT = Math.max(T_LIFT + 0.4 * squeeze, duration - 0.55 * squeeze);
+          var T_EXIT = Math.max(T_LIFT + ASIDE_TIME, duration - EXIT_TIME);
 
-          function clamp01(u) {
-            return u < 0 ? 0 : u > 1 ? 1 : u;
+          // The stroke as drawn by stroke-time f: its samples up to f, the last one interpolated.
+          function drawnTo(s, f) {
+            var x = clamp01(f) * STEPS;
+            var k = Math.floor(x);
+            var out = s.pts.slice(0, k + 1);
+            if (k < STEPS && x > k) {
+              var a = s.pts[k];
+              var b = s.pts[k + 1];
+              var m = x - k;
+              out.push({
+                x: a.x + (b.x - a.x) * m,
+                y: a.y + (b.y - a.y) * m,
+                nx: a.nx + (b.nx - a.nx) * m,
+                ny: a.ny + (b.ny - a.ny) * m,
+                w: a.w + (b.w - a.w) * m,
+              });
+            }
+            return out;
           }
-          var glide = gsap.parseEase("power3.out");
-          var stroke = gsap.parseEase("sine.inOut");
-          var hop = gsap.parseEase("power2.inOut");
-          var leave = gsap.parseEase("power2.in");
 
-          function pointOn(s, u) {
-            var p = s.thin.getPointAtLength(clamp01(u) * s.length);
+          // Filled outline of a variable-width stroke with round ends.
+          function outline(pts) {
+            if (pts.length < 2) return "";
+            function side(p, dir) {
+              var h = (p.w / 2) * dir;
+              return (p.x + p.nx * h).toFixed(1) + " " + (p.y + p.ny * h).toFixed(1);
+            }
+            function cap(p) {
+              var r = (p.w / 2).toFixed(2);
+              return " A" + r + " " + r + " 0 0 0 ";
+            }
+            var last = pts[pts.length - 1];
+            var d = "M" + side(pts[0], 1);
+            for (var i = 1; i < pts.length; i++) d += " L" + side(pts[i], 1);
+            d += cap(last) + side(last, -1);
+            for (var j = pts.length - 2; j >= 0; j--) d += " L" + side(pts[j], -1);
+            return d + cap(pts[0]) + side(pts[0], 1) + " Z";
+          }
+
+          function nibOf(s, f) {
+            var pts = drawnTo(s, f);
+            var p = pts[pts.length - 1];
             return { x: p.x, y: p.y };
           }
-          var first = pointOn(strokes[0], 0);
-          var lastStroke = strokes[strokes.length - 1];
-          var endPoint = pointOn(lastStroke, 1);
+          var first = nibOf(strokes[0], 0);
+          var endPoint = nibOf(strokes[strokes.length - 1], 1);
+
+          // After the lift the nib steps straight away from the region until it clears the mark
+          // by 40u, then keeps going that way off the frame.
+          var inkBox = { l: box.x, t: box.y, r: box.x + box.w, b: box.y + box.h };
+          strokes.forEach(function (s) {
+            s.pts.forEach(function (p) {
+              inkBox.l = Math.min(inkBox.l, p.x);
+              inkBox.t = Math.min(inkBox.t, p.y);
+              inkBox.r = Math.max(inkBox.r, p.x);
+              inkBox.b = Math.max(inkBox.b, p.y);
+            });
+          });
+          var away = { x: endPoint.x - (box.x + box.w / 2), y: endPoint.y - (box.y + box.h / 2) };
+          var awayLen = Math.hypot(away.x, away.y) || 1;
+          away = { x: away.x / awayLen, y: away.y / awayLen };
+          function reach(p, l, t, r, b) {
+            var hits = [];
+            if (away.x > 1e-6) hits.push((r - p.x) / away.x);
+            if (away.x < -1e-6) hits.push((l - p.x) / away.x);
+            if (away.y > 1e-6) hits.push((b - p.y) / away.y);
+            if (away.y < -1e-6) hits.push((t - p.y) / away.y);
+            return Math.max(0, Math.min.apply(null, hits));
+          }
+          var clear = 40 * unit;
+          var step = reach(
+            endPoint,
+            inkBox.l - clear,
+            inkBox.t - clear,
+            inkBox.r + clear,
+            inkBox.b + clear,
+          );
+          var ASIDE = {
+            x: Math.max(40 * unit, Math.min(W - 100 * unit, endPoint.x + away.x * step)),
+            y: Math.max(100 * unit, Math.min(H - 40 * unit, endPoint.y + away.y * step)),
+          };
+          var off = reach(ASIDE, 0, 0, W, H) + 180 * unit;
+          var END = { x: ASIDE.x + away.x * off, y: ASIDE.y + away.y * off };
           var START = { x: first.x + 0.3 * W, y: H * 1.25 };
-          var ASIDE = { x: endPoint.x + 70 * unit, y: endPoint.y + 50 * unit };
-          var END = { x: W * 1.15, y: H * 1.2 };
 
           function mix(a, b, u) {
             return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
@@ -307,25 +419,19 @@
             for (var i = 0; i < windows.length; i++) {
               var w = windows[i];
               if (t <= w.end)
-                return {
-                  p: pointOn(strokes[i], stroke((t - w.start) / (w.end - w.start))),
-                  lift: 0,
-                };
+                return { p: nibOf(strokes[i], (t - w.start) / (w.end - w.start)), lift: 0 };
               var next = windows[i + 1];
               if (next && t < next.start) {
                 var u = (t - w.end) / (next.start - w.end);
                 return {
-                  p: mix(pointOn(strokes[i], 1), pointOn(strokes[i + 1], 0), hop(u)),
+                  p: mix(nibOf(strokes[i], 1), nibOf(strokes[i + 1], 0), hop(u)),
                   lift: Math.sin(Math.PI * u),
                 };
               }
             }
             if (t <= T_EXIT) {
-              var a = clamp01((t - T_LIFT) / (0.45 * squeeze));
-              return {
-                p: mix(endPoint, ASIDE, gsap.parseEase("power2.out")(a)),
-                lift: Math.min(1, a * 2.5),
-              };
+              var a = clamp01((t - T_LIFT) / ASIDE_TIME);
+              return { p: mix(endPoint, ASIDE, aside(a)), lift: Math.min(1, a * 2.5) };
             }
             return {
               p: mix(ASIDE, END, leave(clamp01((t - T_EXIT) / (duration - T_EXIT)))),
@@ -333,27 +439,10 @@
             };
           }
 
-          function drawn(i, t) {
-            var w = windows[i];
-            return stroke(clamp01((t - w.start) / (w.end - w.start))) * strokes[i].length;
-          }
-
           function render(t) {
             strokes.forEach(function (s, i) {
-              var len = drawn(i, t);
-              s.thin.style.opacity = len > 0.5 ? "1" : "0";
-              s.thin.setAttribute(
-                "stroke-dasharray",
-                len.toFixed(2) + " " + (s.length * 2).toFixed(2),
-              );
-              // The thick core trails the tip and never reaches either end: the stroke tapers.
-              var core = Math.min(len, s.length * 0.9) - s.length * 0.08;
-              s.thick.style.opacity = core > 0.5 ? "1" : "0";
-              s.thick.setAttribute(
-                "stroke-dasharray",
-                Math.max(0, core).toFixed(2) + " " + (s.length * 3).toFixed(2),
-              );
-              s.thick.setAttribute("stroke-dashoffset", (-s.length * 0.08).toFixed(2));
+              var w = windows[i];
+              s.el.setAttribute("d", outline(drawnTo(s, (t - w.start) / (w.end - w.start))));
             });
             var state = penAt(t);
             var lift = state.lift;
@@ -362,20 +451,18 @@
             penBody.setAttribute(
               "transform",
               "scale(" +
-                ((1.45 + 0.14 * lift) * unit).toFixed(4) +
+                ((0.85 + 0.07 * lift) * unit).toFixed(4) +
                 ") rotate(" +
                 (-4 * lift).toFixed(2) +
                 ")",
             );
             pen.style.filter =
-              "drop-shadow(" +
-              (4 + 16 * lift).toFixed(1) +
+              "drop-shadow(0 " +
+              ((3 + 7 * lift) * unit).toFixed(1) +
               "px " +
-              (6 + 20 * lift).toFixed(1) +
-              "px " +
-              (3 + 14 * lift).toFixed(1) +
+              ((4 + 8 * lift) * unit).toFixed(1) +
               "px rgba(0,0,0," +
-              (0.32 - 0.14 * lift).toFixed(3) +
+              (0.3 - 0.1 * lift).toFixed(3) +
               "))";
           }
 

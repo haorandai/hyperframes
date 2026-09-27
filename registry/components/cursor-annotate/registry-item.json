@@ -16,8 +16,8 @@
   "family": "pointers",
   "profile": "interaction",
   "syncPoints": [
-    { "id": "ink-down", "phase": "in", "offset": 0.9 },
-    { "id": "ink-done", "phase": "in", "offset": 2.0 }
+    { "id": "ink-down", "phase": "in", "offset": 0.7 },
+    { "id": "ink-done", "phase": "in", "offset": 1.8 }
   ],
   "variables": [
     {

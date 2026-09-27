@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   Annotate Cursor, standalone demo: a signups chart whose launch-week spike gets
-  circled. It mounts cursor-annotate.html full-frame over the card.
+  circled. It mounts cursor-annotate.html full-frame over the card, starting at 0.35s.
 -->
 <html lang="en">
   <head>
@@ -27,7 +27,7 @@
         width: 1920px;
         height: 1080px;
         overflow: hidden;
-        background: linear-gradient(160deg, #eef1f7 0%, #dde3ee 100%);
+        background: #f4f4f5;
         font-family: Inter, system-ui, sans-serif;
       }
       .card {
@@ -39,8 +39,9 @@
         border-radius: 28px;
         background: #ffffff;
         box-shadow:
-          0 30px 90px rgba(24, 32, 56, 0.16),
-          0 0 0 1px rgba(24, 32, 56, 0.06);
+          0 0 0 1px rgba(0, 0, 0, 0.05),
+          0 2px 4px rgba(0, 0, 0, 0.04),
+          0 24px 64px rgba(0, 0, 0, 0.08);
       }
       .eyebrow {
         position: absolute;
@@ -48,7 +49,7 @@
         top: 48px;
         font-size: 20px;
         font-weight: 600;
-        color: #6b7285;
+        color: #71717a;
       }
       .headline {
         position: absolute;
@@ -57,7 +58,7 @@
         font-size: 48px;
         font-weight: 750;
         letter-spacing: -0.02em;
-        color: #121629;
+        color: #18181b;
       }
       .delta {
         position: absolute;
@@ -65,8 +66,8 @@
         top: 56px;
         padding: 10px 18px;
         border-radius: 999px;
-        background: #e8f7ee;
-        color: #16794a;
+        background: #f4f4f5;
+        color: #3f3f46;
         font-size: 20px;
         font-weight: 700;
       }
@@ -75,18 +76,18 @@
         left: 56px;
         right: 56px;
         height: 1px;
-        background: #eceef3;
+        background: #f0f0f2;
       }
       .bar {
         position: absolute;
         bottom: 80px;
         width: 70px;
         border-radius: 12px 12px 4px 4px;
-        background: #c9d1e3;
+        background: #d4d4d8;
         transform-origin: 50% 100%;
       }
       .bar.spike {
-        background: linear-gradient(180deg, #5b6cff, #3947d9);
+        background: #52525b;
       }
       .week {
         position: absolute;
@@ -95,7 +96,7 @@
         text-align: center;
         font-size: 17px;
         font-weight: 600;
-        color: #8a90a2;
+        color: #a1a1aa;
       }
       .spike-label {
         position: absolute;
@@ -105,7 +106,7 @@
         text-align: center;
         font-size: 26px;
         font-weight: 750;
-        color: #3947d9;
+        color: #18181b;
       }
     </style>
   </head>
@@ -116,9 +117,9 @@
       data-start="0"
       data-width="1920"
       data-height="1080"
-      data-duration="4.2"
+      data-duration="3.3"
     >
-      <div class="card clip" id="card" data-start="0" data-duration="4.2" data-track-index="0">
+      <div class="card clip" id="card" data-start="0" data-duration="3.3" data-track-index="0">
         <div class="eyebrow">Weekly signups</div>
         <div class="headline">12,480</div>
         <div class="delta">+38% this quarter</div>
@@ -138,7 +139,7 @@
         <div class="week" style="left: 202px">W2</div>
         <div class="week" style="left: 324px">W3</div>
         <div class="week" style="left: 446px">W4</div>
-        <div class="week" style="left: 590px; color: #3947d9">Launch</div>
+        <div class="week" style="left: 590px; color: #18181b">Launch</div>
         <div class="week" style="left: 712px">W6</div>
         <div class="week" style="left: 834px">W7</div>
         <div class="week" style="left: 956px">W8</div>
@@ -150,8 +151,8 @@
         data-composition-id="cursor-annotate"
         data-composition-src="./cursor-annotate.html"
         data-variable-values='{"shape":"circle","color":"#f43f5e","target_x":50.2,"target_y":28.5,"target_w":7.8,"target_h":11.5}'
-        data-start="0"
-        data-duration="4.2"
+        data-start="0.35"
+        data-duration="2.95"
         data-track-index="1"
         data-width="1920"
         data-height="1080"
@@ -162,10 +163,11 @@
     <script>
       window.__timelines = window.__timelines || {};
       var tl = gsap.timeline({ paused: true });
+      // The chart settles before the pen enters at 0.35s.
       tl.fromTo(
         ".bar",
         { scaleY: 0.2 },
-        { scaleY: 1, duration: 0.6, ease: "power3.out", stagger: 0.04 },
+        { scaleY: 1, duration: 0.28, ease: "power3.out", stagger: 0.01 },
         0,
       );
       window.__timelines["cursor-annotate-demo"] = tl;
