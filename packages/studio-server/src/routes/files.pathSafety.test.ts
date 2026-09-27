@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -12,7 +13,9 @@ import {
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { registerFileRoutes } from "./files";
+import { createStudioApi } from "../createStudioApi";
 import { fileContentVersion } from "../helpers/fileVersion";
+import { mkdirWithinProject } from "../helpers/safePath";
 import type { StudioApiAdapter } from "../types";
 
 const tempDirs: string[] = [];
@@ -210,6 +213,49 @@ describe("resolveProjectPath why", () => {
   // fails closed when its base doesn't exist), indistinguishable from a real
   // path-traversal attempt. This must be a 404 with its own `why`, checked
   // BEFORE the NUL/traversal checks so it wins when both are true.
+  it("does not recreate a project folder renamed away while Studio has it open", async () => {
+    const { project } = fixture();
+    const api = createStudioApi({
+      listProjects: () => [],
+      resolveProject: async (id) => ({ id, dir: project }),
+      bundle: async () => null,
+      lint: async () => ({ findings: [] }),
+      runtimeUrl: "/api/runtime.js",
+      rendersDir: () => join(project, "renders"),
+      startRender: () => ({ id: "job", status: "rendering", progress: 0, outputPath: "out.mp4" }),
+      installRegistryBlock: async () => {
+        mkdirWithinProject(project, join(project, "compositions"));
+        return { written: [] };
+      },
+    } as StudioApiAdapter);
+    const render = () =>
+      api.request("http://localhost/projects/demo/render", { method: "POST", body: "{}" });
+    renameSync(project, `${project}-renamed`);
+
+    const save = await api.request(fileUrl("scenes/intro.html"), {
+      method: "PUT",
+      headers: { "If-None-Match": "*" },
+      body: "<html></html>",
+    });
+    const form = new FormData();
+    form.append("files", new File(["upload bytes"], "clip.txt"));
+    const upload = await api.request("http://localhost/projects/demo/upload?dir=assets", {
+      method: "POST",
+      body: form,
+    });
+    const install = await api.request("http://localhost/projects/demo/registry/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blockName: "card" }),
+    });
+
+    for (const response of [save, upload, install, await render()]) {
+      expect(response.status).toBe(404);
+      expect(await response.json()).toMatchObject({ why: "project_dir_missing" });
+    }
+    expect(existsSync(project)).toBe(false);
+  });
+
   it("reports a missing project directory as 404, not 403", async () => {
     const { app, project } = fixture();
     rmSync(project, { recursive: true, force: true });

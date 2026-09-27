@@ -525,7 +525,6 @@ describe("built preview reuse", () => {
 
   it("serves a restarted server from the document store unless the build changed", async () => {
     const projectDir = createProjectDir();
-    const storeDir = join(projectDir, ".hyperframes", "preview");
     const serve = async (salt: string) => {
       const bundle = vi.fn(async () => BUILT);
       const app = new Hono();
@@ -533,7 +532,7 @@ describe("built preview reuse", () => {
         app,
         createAdapter(projectDir, {
           bundle,
-          previewDocuments: createPreviewDocumentStore(storeDir, salt),
+          previewDocuments: createPreviewDocumentStore(projectDir, salt),
         } as Partial<StudioApiAdapter>),
       );
       const html = await (await app.request("http://localhost/projects/demo/preview")).text();

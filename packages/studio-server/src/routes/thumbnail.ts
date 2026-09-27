@@ -4,7 +4,6 @@ import {
   type Dirent,
   fstatSync,
   openSync,
-  mkdirSync,
   readFileSync,
   readdirSync,
   renameSync,
@@ -22,7 +21,11 @@ import { createProjectSignature, resolveProjectAndSignature } from "../helpers/p
 import { STUDIO_MOTION_PATH } from "../helpers/studioMotionRenderScript.js";
 import { thumbnailGenerationCoordinator } from "./thumbnailGenerationCoordinator.js";
 import { requestSubPath } from "../helpers/requestSubPath.js";
-import { resolveWithinProject } from "../helpers/safePath.js";
+import {
+  isProjectRootMissing,
+  mkdirWithinProject,
+  resolveWithinProject,
+} from "../helpers/safePath.js";
 
 const THUMBNAIL_CACHE_VERSION = "v4";
 const THUMBNAIL_MAX_OUTPUT_WIDTH = 240;
@@ -250,7 +253,7 @@ export function registerThumbnailRoutes(api: Hono, adapter: StudioApiAdapter): v
             // but never file them under a signature they do not prove.
             return generated;
           }
-          mkdirSync(cacheDir, { recursive: true });
+          mkdirWithinProject(project.dir, cacheDir);
           writeThumbnailAtomically(cachePath, generated);
           return generated;
         },
@@ -269,6 +272,7 @@ export function registerThumbnailRoutes(api: Hono, adapter: StudioApiAdapter): v
       if (err instanceof DOMException && err.name === "AbortError") {
         return new Response(null, { status: 499 });
       }
+      if (isProjectRootMissing(err)) throw err;
       const msg = err instanceof Error ? err.message : String(err);
       return c.json({ error: `Thumbnail generation failed: ${msg}` }, 500);
     }

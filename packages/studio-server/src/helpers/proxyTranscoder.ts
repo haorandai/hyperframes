@@ -1,18 +1,11 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  realpathSync,
-  renameSync,
-  statSync,
-  unlinkSync,
-  utimesSync,
-} from "node:fs";
+import { existsSync, realpathSync, renameSync, statSync, unlinkSync, utimesSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { findFfBinary } from "@hyperframes/parsers/ff-binaries";
 import { probeMediaMetadata } from "./mediaMetadata.js";
 import { cleanupProxyCache } from "./proxyCache.js";
+import { mkdirWithinProject } from "./safePath.js";
 import { PROXY_VARIANT_CONFIG, type ProxyVariant } from "./mediaCodecMap.js";
 
 /**
@@ -440,6 +433,7 @@ async function runFfmpeg(
 }
 
 async function transcodeToCache(
+  projectDir: string,
   absoluteSourcePath: string,
   cachePath: string,
   variant: ProxyVariant,
@@ -450,7 +444,7 @@ async function transcodeToCache(
     if (existsSync(cachePath)) return cachePath;
 
     const cacheDir = dirname(cachePath);
-    mkdirSync(cacheDir, { recursive: true });
+    mkdirWithinProject(projectDir, cacheDir);
     const tempPath = join(cacheDir, `.tmp-${randomUUID()}-${basename(cachePath)}`);
     try {
       await runFfmpeg(absoluteSourcePath, tempPath, variant);
@@ -497,7 +491,7 @@ export async function resolveProxy(
   const existing = inFlight.get(cachePath);
   if (existing) return existing;
 
-  const promise = transcodeToCache(source.sourcePath, cachePath, variant)
+  const promise = transcodeToCache(source.projectDir, source.sourcePath, cachePath, variant)
     .catch((err: unknown) => {
       if (
         err instanceof ProxyTranscodeError &&

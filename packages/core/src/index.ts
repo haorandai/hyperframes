@@ -275,7 +275,13 @@ export {
   type MediaVisualStyleProperty,
 } from "./inline-scripts/parityContract";
 export { redactKnownPaths, redactTelemetryString } from "./telemetryRedaction";
-export { isSafePath, resolveWithinProject } from "./safePath";
+export {
+  isProjectRootMissing,
+  isSafePath,
+  mkdirWithinProject,
+  ProjectRootMissingError,
+  resolveWithinProject,
+} from "./safePath";
 export type {
   HyperframePickerApi,
   HyperframePickerBoundingBox,
