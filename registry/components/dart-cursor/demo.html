@@ -2,7 +2,7 @@
 <!--
   Dart Cursor, standalone demo: an export dialog the cursor works through. It mounts
   dart-cursor.html full-frame over the dialog; the dialog's reactions are keyed to the
-  cursor's two click beats (0.95s and 2.2s).
+  cursor's two click beats (0.7s and 1.7s).
 -->
 <html lang="en">
   <head>
@@ -28,9 +28,7 @@
         width: 1920px;
         height: 1080px;
         overflow: hidden;
-        background:
-          radial-gradient(1200px 700px at 20% 10%, #3b4c8f 0%, transparent 60%),
-          radial-gradient(1000px 800px at 90% 100%, #7a3f8f 0%, transparent 55%), #141726;
+        background: #111318;
         font-family: Inter, system-ui, sans-serif;
       }
       .dialog {
@@ -62,17 +60,13 @@
         height: 236px;
         border-radius: 16px;
         overflow: hidden;
-        background: linear-gradient(135deg, #ffb36b, #ff5f8f 45%, #6c5bff);
+        background: #23262d;
       }
-      .thumb::before {
-        content: "";
-        position: absolute;
-        left: 40px;
-        bottom: -60px;
-        width: 220px;
-        height: 220px;
-        border-radius: 50%;
-        background: rgba(255, 255, 255, 0.28);
+      .thumb svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+        font-family: Inter, system-ui, sans-serif;
       }
       .thumb-time {
         position: absolute;
@@ -146,7 +140,7 @@
         width: 240px;
         height: 60px;
         border-radius: 16px;
-        background: #4f5bff;
+        background: #18181b;
         color: #ffffff;
         font-size: 21px;
         font-weight: 700;
@@ -158,13 +152,22 @@
         line-height: 60px;
         text-align: center;
       }
+      .check {
+        display: inline-block;
+        width: 22px;
+        height: 22px;
+        margin-right: 8px;
+        vertical-align: -4px;
+        fill: none;
+        stroke: #ffffff;
+        stroke-width: 2.6;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
       .progress {
         position: absolute;
-        left: 0;
-        bottom: 0;
-        width: 100%;
-        height: 5px;
-        background: rgba(255, 255, 255, 0.85);
+        inset: 0;
+        background: rgba(255, 255, 255, 0.22);
         transform: scaleX(0);
         transform-origin: 0 50%;
       }
@@ -191,11 +194,48 @@
       data-start="0"
       data-width="1920"
       data-height="1080"
-      data-duration="4.4"
+      data-duration="3.6"
     >
-      <div class="dialog clip" id="dialog" data-start="0" data-duration="4.4" data-track-index="0">
+      <div class="dialog clip" id="dialog" data-start="0" data-duration="3.6" data-track-index="0">
         <div class="title">Export</div>
-        <div class="thumb"><div class="thumb-time">0:42</div></div>
+        <div class="thumb">
+          <svg viewBox="0 0 420 236" aria-hidden="true">
+            <rect x="40" y="26" width="340" height="230" rx="8" fill="#f4f4f5" />
+            <rect x="122" y="46" width="258" height="190" fill="#ffffff" />
+            <circle cx="52" cy="36" r="3.2" fill="#ff5f57" />
+            <circle cx="62" cy="36" r="3.2" fill="#febc2e" />
+            <circle cx="72" cy="36" r="3.2" fill="#28c840" />
+            <rect x="46" y="71" width="70" height="13" rx="3" fill="#e4e4e7" />
+            <g font-size="8" fill="#52525b">
+              <text x="54" y="64">Home</text>
+              <text x="54" y="80" fill="#18181b" font-weight="600">Reports</text>
+              <text x="54" y="96">Customers</text>
+              <text x="54" y="112">Billing</text>
+              <text x="54" y="128">Settings</text>
+            </g>
+            <text x="136" y="66" font-size="8" fill="#71717a">Monthly revenue</text>
+            <text x="136" y="87" font-size="17" font-weight="700" fill="#18181b">$48,210</text>
+            <text x="206" y="86" font-size="7.5" font-weight="600" fill="#16a34a">
+              +12.4% vs Aug
+            </text>
+            <path d="M136 120H366M136 150H366M136 180H366" stroke="#f0f0f1" />
+            <path
+              d="M136 186L159 180L182 183L205 172L228 175L251 164L274 166L297 152L320 146L343 138L366 126V200H136Z"
+              fill="#0a84ff"
+              fill-opacity="0.1"
+            />
+            <path
+              d="M136 186L159 180L182 183L205 172L228 175L251 164L274 166L297 152L320 146L343 138L366 126"
+              fill="none"
+              stroke="#0a84ff"
+              stroke-width="1.8"
+              stroke-linejoin="round"
+            />
+            <circle cx="210" cy="118" r="24" fill="#000000" fill-opacity="0.55" />
+            <path d="M203 106L203 130L223 118Z" fill="#ffffff" />
+          </svg>
+          <div class="thumb-time">0:42</div>
+        </div>
         <div class="file">product-tour.mp4</div>
         <div class="file-meta">42 seconds, 30 fps, stereo audio</div>
 
@@ -220,6 +260,11 @@
           <span id="export-idle">Export video</span>
           <span id="export-busy" style="opacity: 0">Exporting…</span>
           <div class="progress" id="progress"></div>
+          <span
+            ><svg class="check" id="export-check" viewBox="0 0 24 24" style="opacity: 0">
+              <path d="M5 12.5l4.5 4.5L19 7.5" /></svg
+            ><b id="export-done" style="opacity: 0; display: inline-block">Exported</b></span
+          >
         </div>
       </div>
 
@@ -228,9 +273,9 @@
         id="dart-cursor"
         data-composition-id="dart-cursor"
         data-composition-src="./dart-cursor.html"
-        data-variable-values='{"tone":"dark","target_x":70.4,"target_y":38.7,"target2_x":67.6,"target2_y":73.3,"enter_from":"right","exit_to":"right"}'
+        data-variable-values='{"tone":"dark","target_x":67.9,"target_y":40.5,"target2_x":63.3,"target2_y":73.7,"enter_from":"right","exit_to":"right"}'
         data-start="0"
-        data-duration="4.4"
+        data-duration="3.6"
         data-track-index="1"
         data-width="1920"
         data-height="1080"
@@ -242,22 +287,38 @@
       window.__timelines = window.__timelines || {};
       var tl = gsap.timeline({ paused: true });
 
-      // First click (0.95s): the resolution thumb slides onto 4K.
-      tl.to("#res-thumb", { x: 144, duration: 0.34, ease: "power3.out" }, 1.03);
-      tl.to("#res-1080", { color: "#6b6f85", duration: 0.2 }, 1.03);
-      tl.to("#res-4k", { color: "#111320", duration: 0.2 }, 1.03);
+      // First click (0.7s): the resolution thumb slides onto 4K.
+      tl.to("#res-thumb", { x: 144, duration: 0.34, ease: "power3.out" }, 0.78);
+      tl.to("#res-1080", { color: "#6b6f85", duration: 0.2 }, 0.78);
+      tl.to("#res-4k", { color: "#111320", duration: 0.2 }, 0.78);
 
-      // Second click (2.2s): the button presses, relabels and starts filling.
-      tl.to("#export", { scale: 0.96, duration: 0.08, ease: "power2.in" }, 2.2);
-      tl.to("#export", { scale: 1, duration: 0.22, ease: "power2.out" }, 2.28);
-      tl.to("#export-idle", { opacity: 0, y: -14, duration: 0.2, ease: "power2.in" }, 2.28);
+      // Second click (1.7s): the button presses, relabels and fills over 1s.
+      tl.to("#export", { scale: 0.96, duration: 0.08, ease: "power2.in" }, 1.7);
+      tl.to("#export", { scale: 1, duration: 0.22, ease: "power2.out" }, 1.78);
+      tl.to("#export-idle", { opacity: 0, y: -14, duration: 0.2, ease: "power2.in" }, 1.78);
       tl.fromTo(
         "#export-busy",
         { opacity: 0, y: 14 },
         { opacity: 1, y: 0, duration: 0.26, ease: "power3.out" },
-        2.36,
+        1.86,
       );
-      tl.to("#progress", { scaleX: 0.74, duration: 2.0, ease: "power1.inOut" }, 2.4);
+      tl.to("#progress", { scaleX: 1, duration: 1.0, ease: "none" }, 1.8);
+
+      // Done (2.8s): the fill clears and a check swaps in with "Exported".
+      tl.to("#export-busy", { opacity: 0, y: -14, duration: 0.12, ease: "power2.in" }, 2.8);
+      tl.to("#progress", { opacity: 0, duration: 0.2, ease: "power2.out" }, 2.8);
+      tl.fromTo(
+        "#export-check",
+        { opacity: 0, scale: 0.3, filter: "blur(3px)" },
+        { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.3, ease: "power3.out" },
+        2.88,
+      );
+      tl.fromTo(
+        "#export-done",
+        { opacity: 0, y: 14 },
+        { opacity: 1, y: 0, duration: 0.26, ease: "power3.out" },
+        2.88,
+      );
 
       window.__timelines["dart-cursor-demo"] = tl;
     </script>

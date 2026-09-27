@@ -16,8 +16,8 @@
   "family": "pointers",
   "profile": "interaction",
   "syncPoints": [
-    { "id": "first-click", "phase": "in", "offset": 0.95 },
-    { "id": "second-click", "phase": "in", "offset": 2.2 }
+    { "id": "first-click", "phase": "in", "offset": 0.7 },
+    { "id": "second-click", "phase": "in", "offset": 1.7 }
   ],
   "variables": [
     {

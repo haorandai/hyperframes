@@ -16,13 +16,13 @@
     enter_from, exit_to (left|right|top|bottom)  the edge it arrives from and leaves by
     blur (0 to 1.5)                     motion-blur strength, 0 turns it off
 
-  envelope (default 4.4s): entry 0-0.9s, click 0.95s, move 1.45-2.15s, click 2.2s,
-  elastic hold, exit in the last 0.55s. Shorter durations compress every beat evenly.
+  envelope (default 3.6s): entry 0-0.6s, click 0.7s, move 1.0-1.55s, click 1.7s,
+  hold, exit in the last 0.55s. Shorter durations compress every beat evenly.
 -->
 <html
   lang="en"
   data-composition-id="dart-cursor"
-  data-composition-duration="4.4"
+  data-composition-duration="3.6"
   data-composition-variables='[
     { "id": "tone", "type": "enum", "role": "style", "label": "Tone", "default": "dark", "options": [ { "value": "dark", "label": "Dark body, white outline" }, { "value": "light", "label": "Light body, dark outline" } ] },
     { "id": "target_x", "type": "number", "role": "layout", "label": "First click X", "default": 34, "min": 5, "max": 95, "step": 1, "unit": "%" },
@@ -94,7 +94,7 @@
         }
       </style>
 
-      <div id="root" data-composition-id="dart-cursor" data-duration="4.4">
+      <div id="root" data-composition-id="dart-cursor" data-duration="3.6">
         <div class="dc-cursor" id="dc-cursor" data-tone="dark" aria-hidden="true">
           <svg class="dc-svg" viewBox="-120 -120 240 240" aria-hidden="true">
             <defs>
@@ -177,7 +177,7 @@
           var duration = Math.max(
             0.001,
             parseFloat(
-              root.dataset.duration || html.getAttribute("data-composition-duration") || "4.4",
+              root.dataset.duration || html.getAttribute("data-composition-duration") || "3.6",
             ),
           );
           var tone = vars.tone === "light" ? "light" : "dark";
@@ -185,7 +185,8 @@
           var W = root.clientWidth || 1920;
           var H = root.clientHeight || 1080;
           var unit = W / 1920;
-          var PX_PER_SVG_UNIT = 1.14 * unit;
+          // The glyph is 105 units tall with its outline: 80 px at 1920 wide.
+          var PX_PER_SVG_UNIT = (80 / 105) * unit;
 
           function stagePoint(xPercent, yPercent) {
             return { x: (xPercent / 100) * W, y: (yPercent / 100) * H };
@@ -201,14 +202,14 @@
           var START = offStage(side(vars.enter_from, "right"), A);
           var END = offStage(side(vars.exit_to, "right"), B);
 
-          // Beats at the default 4.4s; a shorter composition compresses them evenly.
+          // Beats at the default 3.6s; a shorter composition compresses them evenly.
           var FIXED_TAIL = 0.55 + 0.35;
-          var squeeze = Math.min(1, duration / (2.2 + FIXED_TAIL));
-          var T_LAND1 = 0.9 * squeeze;
-          var T_CLICK1 = 0.95 * squeeze;
-          var T_MOVE = 1.45 * squeeze;
-          var T_LAND2 = 2.15 * squeeze;
-          var T_CLICK2 = 2.2 * squeeze;
+          var squeeze = Math.min(1, duration / (1.7 + FIXED_TAIL));
+          var T_LAND1 = 0.6 * squeeze;
+          var T_CLICK1 = 0.7 * squeeze;
+          var T_MOVE = 1.0 * squeeze;
+          var T_LAND2 = 1.55 * squeeze;
+          var T_CLICK2 = 1.7 * squeeze;
           var T_EXIT = Math.max(T_CLICK2 + 0.3 * squeeze, duration - 0.55 * squeeze);
 
           function clamp01(u) {
