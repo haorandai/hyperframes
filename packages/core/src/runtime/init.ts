@@ -2556,6 +2556,18 @@ export function initSandboxRuntimeModular(): void {
       });
   };
 
+  const clipChainVisibleAt = (
+    from: Element | null,
+    time: number,
+    visibleAt: ReturnType<typeof timedVisibilityAt>,
+    rootComp: HTMLElement | null,
+  ) => {
+    for (let node = from; node && node !== rootComp; node = node.parentElement)
+      if (isHtmlElement(node) && node.hasAttribute("data-start") && !visibleAt(node, time))
+        return false;
+    return true;
+  };
+
   const hiddenImagesSkipped = skipsHiddenImages();
   const LOOKAHEAD_SECONDS = 2;
   // Unskipped while due in the look-ahead window, so a clip shorter than the window still loads first.
@@ -2597,23 +2609,12 @@ export function initSandboxRuntimeModular(): void {
         if (nodeAffectsAudio(rawNode)) hiddenAudioDirty = true;
       }
 
-      let isVisibleNow = visibleAt(rawNode, currentTime);
       // Descendants must not override a hidden ancestor clip. CSS visibility can
       // otherwise leak child pixels through inactive scenes because a descendant
       // with visibility:visible escapes an ancestor's visibility:hidden.
-      if (isVisibleNow) {
-        let ancestor = rawNode.parentElement;
-        while (ancestor) {
-          if (ancestor === rootComp) break;
-          if (isHtmlElement(ancestor) && ancestor.hasAttribute("data-start")) {
-            if (!visibleAt(ancestor, currentTime)) {
-              isVisibleNow = false;
-              break;
-            }
-          }
-          ancestor = ancestor.parentElement;
-        }
-      }
+      const isVisibleNow =
+        visibleAt(rawNode, currentTime) &&
+        clipChainVisibleAt(rawNode.parentElement, currentTime, visibleAt, rootComp);
       rawNode.style.visibility = isVisibleNow ? "visible" : "hidden";
       rawNode.toggleAttribute(
         UPCOMING_ATTR,
@@ -2664,18 +2665,11 @@ export function initSandboxRuntimeModular(): void {
       if (!hiddenImagesSkipped) return [];
       const rootComp = resolveRootCompositionElement();
       const visibleAt = timedVisibilityAt();
-      const shownAt = (el: Element): boolean => {
-        for (let node: Element | null = el; node && node !== rootComp; node = node.parentElement) {
-          if (isHtmlElement(node) && node.hasAttribute("data-start") && !visibleAt(node, time))
-            return false;
-        }
-        return true;
-      };
       return Array.from(document.images).filter(
         (img) =>
           img.closest('[data-start][style*="visibility: hidden"]') !== null &&
           (img.closest(SKIPPED_CLIP) !== null || !img.complete) &&
-          shownAt(img),
+          clipChainVisibleAt(img, time, visibleAt, rootComp),
       );
     });
 
