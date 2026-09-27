@@ -467,7 +467,7 @@ describe("parked transport loop", () => {
     expect(posted.filter((m) => m["type"] === "state")).toHaveLength(0);
   });
 
-  it("keeps the manifest on its frame cadence while playing, whatever the DOM does", () => {
+  it("rate-limits the manifest while playing, whatever the DOM does", () => {
     mount();
     initSandboxRuntimeModular();
     quiesce();
@@ -506,6 +506,35 @@ describe("parked transport loop", () => {
     const before = posted.filter((m) => m["type"] === "timeline").length;
     for (let i = 0; i < 250; i += 1) frame();
     expect(posted.filter((m) => m["type"] === "timeline").length - before).toBe(0);
+  });
+
+  it("applies a data-width change while playing", async () => {
+    mount();
+    initSandboxRuntimeModular();
+    quiesce();
+    window.__player!.play();
+    const frame = () => {
+      vi.advanceTimersByTime(8);
+      raf.step(8);
+    };
+    for (let i = 0; i < 300; i += 1) frame();
+    const root = document.getElementById("root")!;
+    root.setAttribute("data-width", "640");
+    await flushObservers();
+    for (let i = 0; i < 60; i += 1) frame();
+    expect(root.style.width).toBe("640px");
+  });
+
+  it("applies a data-height change while parked", async () => {
+    mount();
+    initSandboxRuntimeModular();
+    quiesce();
+    const root = document.getElementById("root")!;
+    root.setAttribute("data-height", "360");
+    await flushObservers();
+    vi.advanceTimersByTime(PARK_HEARTBEAT_MS);
+    settle();
+    expect(root.style.height).toBe("360px");
   });
 
   it("does not park when the manifest post throws with a change still pending", async () => {

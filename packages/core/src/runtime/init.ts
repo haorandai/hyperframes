@@ -1205,7 +1205,8 @@ export function initSandboxRuntimeModular(): void {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: DURATION_FLOOR_INPUT_ATTRIBUTES,
+      // Sizing inputs too: postTimeline applies them, and it runs when this revision moves.
+      attributeFilter: [...DURATION_FLOOR_INPUT_ATTRIBUTES, "data-width", "data-height"],
     });
     // Media duration changes are published as events, not DOM mutations, and
     // they do not bubble — so listen in the capture phase, which reaches every
@@ -4116,10 +4117,8 @@ export function initSandboxRuntimeModular(): void {
     try {
       transportTickCount += 1;
 
-      // The periodic jobs below notice document changes. The timing revision moves on
-      // exactly their inputs, so a change is serviced when seen (rate-limited); what
-      // nothing can push is asked on a timer: the frame counter while paused, and
-      // PLAYING_POLL_INTERVAL_MS while playing, where a counter doubles at 120 Hz.
+      // The jobs below run when the composition revision moves (rate-limited). What no
+      // observer sees is polled: on the frame counter paused, on a timer playing.
       const timingRevision = readCompositionTimingRevision();
       if (timingRevision !== lastSeenTimingRevision) {
         lastSeenTimingRevision = timingRevision;
@@ -4150,7 +4149,7 @@ export function initSandboxRuntimeModular(): void {
       if (
         shouldAttemptPeriodicTimelineBind({
           tick: transportTickCount,
-          isPlaying: clock.isPlaying(),
+          isPlaying: playing,
           hasCapturedTimeline: state.capturedTimeline != null,
           currentTimeSeconds: clock.now(),
           compositionChanged: changeDrivenService,
