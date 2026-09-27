@@ -19,7 +19,7 @@
       "role": "style",
       "label": "Curtain tone",
       "description": "Curtain color.",
-      "default": "red",
+      "default": "burgundy",
       "options": [
         { "value": "red", "label": "Red" },
         { "value": "burgundy", "label": "Burgundy" },

@@ -2,11 +2,11 @@
 <!--
   curtain-reveal: HyperFrames video primitive (transitions / stage reveal).
 
-  Two pleated stage curtains meet at center, covering the frame. On cue they
-  gather outward -- sliding apart while narrowing slightly, the way real
-  velvet bunches at the tieback -- revealing the stage underneath. An
-  optional pelmet frames the top edge and never moves; an optional soft
-  spotlight blooms in as the curtains part.
+  Two velvet stage curtains meet at center, covering the frame. On cue they
+  gather outward: each fold narrows, hardest at the outer edge, and the hem
+  sweeps up slightly as the fabric bunches at the sides, revealing the stage
+  underneath. An optional pelmet frames the top edge and never moves; an
+  optional warm spotlight comes up as the curtains part.
 
   The stage is a SLOT. Callers supply it by placing an inert template
   anywhere in the HOST page (templates never render, and the runtime wipes
@@ -22,7 +22,7 @@
   its own.
 
   Variables (declared in data-composition-variables below):
-    - tone ("red" | "burgundy" | "navy" | "forest", default "red"): curtain
+    - tone ("red" | "burgundy" | "navy" | "forest", default "burgundy"): curtain
       color.
     - pelmet ("on" | "off", default "on"): static valance framing the top.
     - spotlight ("on" | "off", default "on"): soft glow blooming over the
@@ -33,11 +33,10 @@
     HOLD    = max(0, D - IN); the stage stands revealed, still
     If D < IN_BASE, IN compresses to D (no hold).
 
-  Determinism: no randomness anywhere in this primitive. The pleat texture
-  is a static repeating-gradient, the scalloped hem and pelmet trim are a
-  closed-form sine wave sampled at a fixed point count, and both curtains
-  move on one authored GSAP tween each with explicit fromTo endpoints. Any
-  seek order lands identical frames.
+  Determinism: no randomness anywhere in this primitive. Fold widths are a
+  fixed table, the pelmet trim is a closed-form sine wave sampled at a fixed
+  point count, and every fold's pose is a closed-form function of one tweened
+  draw progress. Any seek order lands identical frames.
 
   Mount contract: the runtime clones only this template. #root fills the
   host box (no data-width/data-height, container-type: size, cqmin units),
@@ -49,7 +48,7 @@
   data-composition-id="curtain-reveal"
   data-composition-duration="2.4"
   data-composition-variables='[
-    { "id": "tone", "type": "enum", "role": "style", "label": "Curtain tone", "description": "Curtain color.", "default": "red", "options": [{ "value": "red", "label": "Red" }, { "value": "burgundy", "label": "Burgundy" }, { "value": "navy", "label": "Navy" }, { "value": "forest", "label": "Forest" }] },
+    { "id": "tone", "type": "enum", "role": "style", "label": "Curtain tone", "description": "Curtain color.", "default": "burgundy", "options": [{ "value": "red", "label": "Red" }, { "value": "burgundy", "label": "Burgundy" }, { "value": "navy", "label": "Navy" }, { "value": "forest", "label": "Forest" }] },
     { "id": "pelmet", "type": "enum", "role": "style", "label": "Pelmet", "description": "Static valance framing the top of the stage.", "default": "on", "options": [{ "value": "on", "label": "On" }, { "value": "off", "label": "Off" }] },
     { "id": "spotlight", "type": "enum", "role": "style", "label": "Spotlight", "description": "Soft glow blooming over the stage as the curtains part.", "default": "on", "options": [{ "value": "on", "label": "On" }, { "value": "off", "label": "Off" }] }
   ]'
@@ -120,9 +119,9 @@
             position: absolute;
             inset: 0;
             background: radial-gradient(
-              38% 55% at 50% 30%,
-              rgba(255, 244, 214, 0.32) 0%,
-              rgba(255, 244, 214, 0) 70%
+              34% 52% at 50% 44%,
+              rgba(255, 196, 128, 0.42) 0%,
+              rgba(255, 196, 128, 0) 72%
             );
             mix-blend-mode: screen;
             opacity: 0;
@@ -131,40 +130,54 @@
 
           .cvr-curtain {
             position: absolute;
-            top: 0;
-            bottom: 0;
-            width: 54%;
-            transform-origin: 50% 50%;
-          }
-          .cvr-curtain-left {
-            left: 0;
-            clip-path: var(--cvr-hem-left);
-          }
-          .cvr-curtain-right {
-            right: 0;
-            clip-path: var(--cvr-hem-right);
+            inset: 0;
           }
 
-          .cvr-curtain-fabric {
+          .cvr-fold {
             position: absolute;
-            inset: 0;
+            top: 0;
+            left: 0;
+            height: 100%;
+            transform-origin: 0 0;
+            border-radius: 0 0 50% 50% / 0 0 1.6cqh 1.6cqh;
             background:
               linear-gradient(
                 180deg,
-                rgba(0, 0, 0, 0.35) 0%,
-                transparent 10%,
-                transparent 90%,
+                rgba(0, 0, 0, 0.45) 0%,
+                rgba(0, 0, 0, 0) 16%,
+                rgba(0, 0, 0, 0) 82%,
                 rgba(0, 0, 0, 0.5) 100%
               ),
-              repeating-linear-gradient(
+              linear-gradient(
                 90deg,
-                var(--cvr-fold-dark) 0cqw,
-                var(--cvr-fold-mid) 1.1cqw,
-                var(--cvr-fold-light) 2.1cqw,
-                var(--cvr-fold-mid) 3cqw,
-                var(--cvr-fold-dark) 4.1cqw
+                var(--cvr-fold-dark) 0%,
+                var(--cvr-fold-mid) 20%,
+                var(--cvr-fold-light) calc(var(--crest) - 14%),
+                var(--cvr-fold-sheen) var(--crest),
+                var(--cvr-fold-light) calc(var(--crest) + 10%),
+                var(--cvr-fold-mid) 80%,
+                var(--cvr-fold-dark) 100%
               );
-            box-shadow: inset 0 0 6cqmin rgba(0, 0, 0, 0.45);
+          }
+          .cvr-fold::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            background: #000;
+            opacity: var(--shade, 0);
+          }
+          .cvr-fold:last-child {
+            box-shadow: 1.2cqw 0 2.4cqw rgba(0, 0, 0, 0.55);
+          }
+          /* The right curtain lays out from the right edge. */
+          .cvr-curtain-right .cvr-fold {
+            left: auto;
+            right: 0;
+            transform-origin: 100% 0;
+          }
+          .cvr-curtain-right .cvr-fold:last-child {
+            box-shadow: -1.2cqw 0 2.4cqw rgba(0, 0, 0, 0.55);
           }
 
           .cvr-pelmet {
@@ -193,12 +206,8 @@
           </div>
           <div class="cvr-spotlight" id="cvr-spotlight"></div>
 
-          <div class="cvr-curtain cvr-curtain-left" id="cvr-curtain-left">
-            <div class="cvr-curtain-fabric"></div>
-          </div>
-          <div class="cvr-curtain cvr-curtain-right" id="cvr-curtain-right">
-            <div class="cvr-curtain-fabric"></div>
-          </div>
+          <div class="cvr-curtain" id="cvr-curtain-left"></div>
+          <div class="cvr-curtain cvr-curtain-right" id="cvr-curtain-right"></div>
 
           <div class="cvr-pelmet" id="cvr-pelmet"></div>
         </div>
@@ -220,19 +229,21 @@
                 ? window.__hyperframes.getVariables()
                 : {};
 
+            // fold: [dark, mid, light, sheen]
             var toneTable = {
-              red: { fold: ["#3d0810", "#8a1a26", "#b23345"], pelmet: "#4a0e1a" },
-              burgundy: { fold: ["#2b0912", "#5c1a2c", "#7d2c42"], pelmet: "#3a0f1e" },
-              navy: { fold: ["#070d1f", "#152a5c", "#274a8f"], pelmet: "#0c1836" },
-              forest: { fold: ["#0c1f13", "#1f4a2b", "#356b3f"], pelmet: "#12291a" },
+              red: { fold: ["#3d0810", "#8a1a26", "#b23345", "#cc5c6e"], pelmet: "#4a0e1a" },
+              burgundy: { fold: ["#2b0912", "#5c1a2c", "#7d2c42", "#a04c62"], pelmet: "#3a0f1e" },
+              navy: { fold: ["#070d1f", "#152a5c", "#274a8f", "#4f72b4"], pelmet: "#0c1836" },
+              forest: { fold: ["#0c1f13", "#1f4a2b", "#356b3f", "#5c9166"], pelmet: "#12291a" },
             };
             var tone = Object.prototype.hasOwnProperty.call(toneTable, vars.tone)
               ? vars.tone
-              : "red";
+              : "burgundy";
             var palette = toneTable[tone];
             root.style.setProperty("--cvr-fold-dark", palette.fold[0]);
             root.style.setProperty("--cvr-fold-mid", palette.fold[1]);
             root.style.setProperty("--cvr-fold-light", palette.fold[2]);
+            root.style.setProperty("--cvr-fold-sheen", palette.fold[3]);
             root.style.setProperty("--cvr-pelmet-color", palette.pelmet);
 
             var pelmetOn = vars.pelmet !== "off";
@@ -268,10 +279,51 @@
               return "polygon(" + pts.join(", ") + ")";
             }
 
-            var curtainHem = hemPolygon(3.4, 2.6, 97);
-            root.style.setProperty("--cvr-hem-left", curtainHem);
-            root.style.setProperty("--cvr-hem-right", curtainHem);
             root.style.setProperty("--cvr-pelmet-hem", hemPolygon(5, 14, 78));
+
+            // Fold widths in px at 1920 wide, outer edge first. Both sum to
+            // 1075 px: from 5cqw off frame to just past center.
+            var PX = 100 / 1920;
+            function buildCurtain(el, dir, widths) {
+              var total = 0;
+              var folds = widths.map(function (w, i) {
+                var fold = document.createElement("div");
+                fold.className = "cvr-fold";
+                // Slight overlap hides seams between neighbouring folds.
+                fold.style.width = w * PX + 0.2 + "cqw";
+                fold.style.setProperty("--crest", 44 + ((i * 5) % 13) + "%");
+                el.appendChild(fold);
+                total += w;
+                return { el: fold, w: w * PX, u: i / (widths.length - 1) };
+              });
+              return { folds: folds, dir: dir, anchor: 51 - total * PX };
+            }
+            var curtains = [
+              buildCurtain(curtainLeft, 1, [88, 124, 70, 106, 136, 80, 112, 62, 98, 130, 69]),
+              buildCurtain(curtainRight, -1, [104, 66, 128, 84, 120, 62, 100, 134, 76, 112, 89]),
+            ];
+
+            // p = eased draw progress. Folds nearer the outer edge compress
+            // harder, and the hem sweeps up toward the lead edge.
+            function poseCurtains(p) {
+              curtains.forEach(function (c) {
+                var x = c.anchor;
+                c.folds.forEach(function (f) {
+                  var sx = 1 - p * (0.86 - 0.16 * f.u);
+                  var sy = 1 - p * 0.07 * f.u * f.u;
+                  f.el.style.transform =
+                    "translateX(" +
+                    (c.dir * x).toFixed(3) +
+                    "cqw) scale(" +
+                    sx.toFixed(4) +
+                    ", " +
+                    sy.toFixed(4) +
+                    ")";
+                  f.el.style.setProperty("--shade", (0.34 * (1 - sx)).toFixed(3));
+                  x += f.w * sx;
+                });
+              });
+            }
 
             // Envelope: fixed IN, elastic HOLD, never time-scaled.
             var IN_BASE = 1.1;
@@ -280,19 +332,24 @@
 
             gsap.set(spotlight, { opacity: 0 });
 
+            // Seek-safe driver: GSAP assigns `p` on every render, seek()
+            // included, so the setter re-poses the folds; onUpdate is
+            // suppressed on seek.
+            var drawn = 0;
+            var draw = {};
+            Object.defineProperty(draw, "p", {
+              get: function () {
+                return drawn;
+              },
+              set: function (next) {
+                drawn = next;
+                poseCurtains(next);
+              },
+            });
+            poseCurtains(0);
+
             var tl = gsap.timeline({ paused: true });
-            tl.fromTo(
-              curtainLeft,
-              { xPercent: 0, scaleX: 1 },
-              { xPercent: -128, scaleX: 0.82, duration: IN, ease: "power2.inOut" },
-              0,
-            );
-            tl.fromTo(
-              curtainRight,
-              { xPercent: 0, scaleX: 1 },
-              { xPercent: 128, scaleX: 0.82, duration: IN, ease: "power2.inOut" },
-              0,
-            );
+            tl.fromTo(draw, { p: 0 }, { p: 1, duration: IN, ease: "power2.inOut" }, 0);
             if (spotlightOn) {
               // Clamped to end by IN: uncapped, start (IN * 0.25) + duration
               // (IN * 0.85) lands at IN * 1.10 -- fine while the hold covers
@@ -303,7 +360,7 @@
               tl.fromTo(
                 spotlight,
                 { opacity: 0 },
-                { opacity: 0.65, duration: spotlightDuration, ease: "power1.out" },
+                { opacity: 0.9, duration: spotlightDuration, ease: "power1.out" },
                 spotlightStart,
               );
             }
