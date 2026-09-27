@@ -793,11 +793,13 @@ export function trackRegistryItemAdded(props: {
   item: string;
   itemType: string;
   requested: boolean;
+  source: "cli" | "studio";
 }): void {
   trackEvent("registry_item_added", {
     item: props.item,
     item_type: props.itemType,
     requested: props.requested,
+    source: props.source,
   });
 }
 
@@ -962,6 +964,10 @@ export function trackCompareSheet(props: {
     total: props.total,
     render_ready_timed_out: props.renderReadyTimedOut,
   });
+}
+
+export function trackHistoryAction(props: { action: string; via: "preview" | "direct" }): void {
+  trackEvent("cli_history", props);
 }
 
 // A skills install was skipped because a required prerequisite binary is

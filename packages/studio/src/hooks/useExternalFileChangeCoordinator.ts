@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import {
   readFileChangeAffectedCompositions,
+  readFileChangeAffectsPreview,
   readFileChangeField,
   readStudioFileChangePath,
 } from "../components/editor/manualEdits";
@@ -64,6 +65,17 @@ interface ExternalFileChangeCoordinatorOptions {
     path: string,
     affectedCompositions: readonly string[] | null,
   ) => void;
+  /**
+   * Called alongside `reloadPreview`/`reloadSdkSession` on every accepted
+   * external change. The file tree (`useFileTree`) is only ever refreshed
+   * from Studio's OWN file operations (create/delete/rename/upload) — an
+   * external change (an agent writing outside Studio) reloads the preview
+   * and the SDK session but, without this, never the listing. A composition
+   * an agent removed or replaced then stays in the tree until the user does
+   * a Studio-side file op or reloads the tab; clicking it opens a session
+   * that can never resolve (`reason: "absent"`, proven stale-tree 2026-09-23).
+   */
+  refreshFileTree?: () => void | Promise<void>;
 }
 
 export interface ExternalFileChangeCoordinatorHandle {
@@ -149,6 +161,7 @@ export function useExternalFileChangeCoordinator({
   onUseExternalFile,
   resetSaveQueues,
   onAcceptedPersistedFileChange,
+  refreshFileTree,
 }: ExternalFileChangeCoordinatorOptions): ExternalFileChangeCoordinatorHandle {
   const [blocked, setBlocked] = useState<ExternalFileChangeBlockedState | null>(null);
   const generationRef = useRef(0);
@@ -219,12 +232,21 @@ export function useExternalFileChangeCoordinator({
   }, [loadConflictSnapshot, projectId, recoveryFilePath]);
 
   const reloadAcceptedGeneration = useCallback(
-    (path: string) => {
-      logReload("reload", { path, by: "external-change coordinator" });
-      reloadPreview();
+    (path: string, affectsPreview = true) => {
+      logReload(affectsPreview ? "reload" : "file-tree only", {
+        path,
+        by: "external-change coordinator",
+      });
+      if (affectsPreview) reloadPreview();
       reloadSdkSession(path);
+      // Fire-and-forget: a failed refresh leaves the tree as stale as it was,
+      // which is the status quo this exists to improve on, not a new failure
+      // mode to surface. The `absent`-triggered fallback in useSdkSession
+      // covers the case where this call is missed entirely (server restart,
+      // a watcher event the SSE never delivered).
+      void refreshFileTree?.();
     },
-    [reloadPreview, reloadSdkSession],
+    [reloadPreview, reloadSdkSession, refreshFileTree],
   );
 
   const persistSnapshotInOrder = useCallback(async (write: () => Promise<void>) => {
@@ -261,7 +283,7 @@ export function useExternalFileChangeCoordinator({
         if (!mountedRef.current || generation !== generationRef.current) return;
         setBlocked(null);
         onAcceptedPersistedFileChange(path, readFileChangeAffectedCompositions(payload));
-        reloadAcceptedGeneration(path);
+        reloadAcceptedGeneration(path, readFileChangeAffectsPreview(payload));
         return;
       }
       const content = readFileChangeContent(payload);
@@ -392,7 +414,12 @@ export function useExternalFileChangeCoordinator({
         return;
       }
 
-      pendingPayloadRef.current = { payload };
+      const waiting = pendingPayloadRef.current?.payload;
+      const waitingChangeOutranksThis =
+        waiting != null &&
+        readFileChangeAffectsPreview(waiting) &&
+        !readFileChangeAffectsPreview(payload);
+      if (!waitingChangeOutranksThis) pendingPayloadRef.current = { payload };
       void startDrainLoop();
     },
     [projectId, pendingTimelineEditPathRef, startDrainLoop, onAcceptedPersistedFileChange],
@@ -438,7 +465,7 @@ export function useExternalFileChangeCoordinator({
       await deleteConflictSnapshot?.(projectId, path);
       setBlocked(null);
       onAcceptedPersistedFileChange(path, readFileChangeAffectedCompositions(current.payload));
-      reloadAcceptedGeneration(path);
+      reloadAcceptedGeneration(path, readFileChangeAffectsPreview(current.payload));
     },
     [
       deleteConflictSnapshot,

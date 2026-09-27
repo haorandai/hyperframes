@@ -3,12 +3,18 @@ import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
-import { injectScriptsIntoHtml, stripEmbeddedRuntimeScripts } from "@hyperframes/core/compiler";
+import {
+  addScenePartsManifest,
+  injectScriptsIntoHtml,
+  insertBeforeCloseTag,
+  stripEmbeddedRuntimeScripts,
+  type BundleOptions,
+} from "@hyperframes/core/compiler";
 import { isWithinProjectRoot } from "@hyperframes/parsers/asset-resolution";
-import type { StudioApiAdapter } from "../types.js";
+import type { ResolvedProject, StudioApiAdapter } from "../types.js";
 import { resolveWithinProject } from "../helpers/safePath.js";
 import { getMimeType } from "../helpers/mime.js";
-import { buildSubCompositionHtml } from "../helpers/subComposition.js";
+import { buildSubCompositionHtml, hasBaseElement } from "../helpers/subComposition.js";
 import {
   resolveProjectAndSignature,
   resolveProjectSignature,
@@ -18,7 +24,12 @@ import {
   STUDIO_MOTION_PATH,
 } from "../helpers/studioMotionRenderScript.js";
 import { ensureHfIds } from "@hyperframes/parsers/hf-ids";
-import { persistHfIdsIfNeeded, stampFileHfIds } from "../helpers/hfIdPersist.js";
+import { settledFileTag } from "../helpers/fileVersion.js";
+import {
+  recordPreviewBuilt,
+  recordPreviewRead,
+  recordPreviewReferences,
+} from "../helpers/previewReads.js";
 import { isVariablesPayload, VARIABLES_PAYLOAD_ERROR } from "../helpers/variablesPayload.js";
 import { injectPreviewVariables } from "../helpers/previewVariables.js";
 import {
@@ -42,6 +53,7 @@ import {
   resolvePreviewMediaCodecProbeCache,
   type PreviewApiAdapter,
 } from "../helpers/mediaProxyPreview.js";
+import { requestSubPath } from "../helpers/requestSubPath.js";
 
 const PROJECT_SIGNATURE_META = "hyperframes-project-signature";
 const GSAP_CDN_VERSION = "3.15.0";
@@ -57,8 +69,7 @@ function injectProjectSignature(html: string, signature: string): string {
       tag,
     );
   }
-  if (html.includes("</head>")) return html.replace("</head>", `${tag}\n</head>`);
-  return `${tag}\n${html}`;
+  return insertBeforeCloseTag(html, "head", `${tag}\n`) ?? `${tag}\n${html}`;
 }
 
 function readStudioMotionManifestContent(projectDir: string): string {
@@ -90,8 +101,7 @@ function parseStudioMotionManifestContent(content: string): {
 }
 
 function injectScriptTagIntoHead(html: string, scriptTag: string): string {
-  if (html.includes("</head>")) return html.replace("</head>", `${scriptTag}\n</head>`);
-  return `${scriptTag}\n${html}`;
+  return insertBeforeCloseTag(html, "head", `${scriptTag}\n`) ?? `${scriptTag}\n${html}`;
 }
 
 function htmlHasGsap(html: string): boolean {
@@ -291,13 +301,15 @@ function resolveProjectMainHtml(
   projectId: string,
 ): { html: string; compositionPath: string } | null {
   const indexPath = join(projectDir, "index.html");
+  const blockHtmlPath = join(projectDir, `${projectId}.html`);
+  recordPreviewRead(projectDir, indexPath);
+  recordPreviewRead(projectDir, blockHtmlPath);
   if (existsSync(indexPath)) {
     return {
       html: readFileSync(indexPath, "utf-8"),
       compositionPath: "index.html",
     };
   }
-  const blockHtmlPath = join(projectDir, `${projectId}.html`);
   if (existsSync(blockHtmlPath)) {
     return {
       html: readFileSync(blockHtmlPath, "utf-8"),
@@ -306,6 +318,16 @@ function resolveProjectMainHtml(
   }
   return null;
 }
+
+/** The bundler options every adapter's `bundle()` uses. This route serves project files under a
+ * `<base href>`, so assets keep their URLs: inlined base64 multiplies the document per reference.
+ * The lint route owns linting, so the bundle skips its own contract lint. */
+export const PREVIEW_BUNDLE_OPTIONS = {
+  runtime: "placeholder",
+  inlineAssets: false,
+  staticGuard: false,
+  sceneParts: true,
+} as const satisfies BundleOptions;
 
 export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): void {
   const previewCacheHeaders = (etag: string) => ({
@@ -317,6 +339,107 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
   // registered API), reused across every preview request so the mtime-cache
   // benefit in scanProjectMediaCodecMap actually applies.
   const mediaCodecProbeCache = resolvePreviewMediaCodecProbeCache(adapter);
+
+  // A build is a function of the project content its ETag names, so it is served again until the
+  // content changes, to a cold browser as well as a revalidating one.
+  const builtPreviews = new Map<string, string>();
+  const rememberPreview = (key: string, html: string) => {
+    builtPreviews.delete(key);
+    builtPreviews.set(key, html);
+    if (builtPreviews.size > 4) builtPreviews.delete(builtPreviews.keys().next().value!);
+  };
+
+  // Concurrent requests for one document (an early prefetch and the player's own load) share a build.
+  const previewBuilds = new Map<string, Promise<string | null>>();
+
+  // fallow-ignore-next-line complexity
+  async function buildPreview(
+    project: ResolvedProject,
+    previewVariables: Record<string, unknown> | null,
+    builtKey: string,
+  ): Promise<string | null> {
+    const diskMain = resolveProjectMainHtml(project.dir, project.id);
+    const normalizedDisk = diskMain ? ensureHfIds(diskMain.html) : null;
+
+    try {
+      let bundled = await adapter.bundle(project.dir, {
+        stampHfIds: true,
+        onRead: (filePath) => recordPreviewRead(project.dir, filePath),
+      });
+      let mainCompositionPath = "index.html";
+      if (!bundled) {
+        if (!diskMain) return null;
+        // Disk HTML may carry a baked inline runtime from a prior export; strip
+        // it so the preview runtime injected below isn't double-loaded (the
+        // bundled path already strips via htmlBundler). Idempotent if absent.
+        bundled = stripEmbeddedRuntimeScripts(normalizedDisk ?? diskMain.html);
+        mainCompositionPath = diskMain.compositionPath;
+      }
+      recordPreviewReferences(project.dir, bundled);
+      recordPreviewBuilt(project.dir);
+
+      // Inject runtime if not already present (check URL pattern and bundler attribute)
+      if (
+        !bundled.includes("hyperframe.runtime") &&
+        !bundled.includes("hyperframes-preview-runtime")
+      ) {
+        const runtimeTag = `<script src="${adapter.runtimeUrl}"></script>`;
+        bundled =
+          insertBeforeCloseTag(bundled, "body", `${runtimeTag}\n`) ?? `${bundled}\n${runtimeTag}`;
+      }
+
+      // Inject <base> for relative asset resolution
+      const baseHref = `/api/projects/${project.id}/preview/`;
+      if (!hasBaseElement(bundled)) {
+        bundled = bundled.replace(/<head>/i, `<head><base href="${baseHref}">`);
+      }
+
+      // Also covers elements the adapter injected; ids already present are kept.
+      bundled = injectStudioPreviewAugmentations(
+        ensureHfIds(await transformPreviewHtml(bundled, adapter, project, mainCompositionPath)),
+        adapter,
+        project.dir,
+        mainCompositionPath,
+      );
+      if (previewVariables) bundled = injectPreviewVariables(bundled, previewVariables);
+      bundled = await injectMediaCodecMap(
+        bundled,
+        adapter,
+        project.dir,
+        mainCompositionPath,
+        mediaCodecProbeCache,
+      );
+      bundled = addScenePartsManifest(bundled, [`meta[name="${PROJECT_SIGNATURE_META}"]`]);
+      rememberPreview(builtKey, bundled);
+      adapter.previewDocuments?.write(builtKey, bundled);
+      return bundled;
+    } catch {
+      // Re-read disk on bundle failure so we serve the latest file content,
+      // not the pre-request snapshot that may have been saved over.
+      const fallback = resolveProjectMainHtml(project.dir, project.id);
+      if (fallback) {
+        const fallbackHtml = ensureHfIds(fallback.html);
+        let fallbackAugmented = injectStudioPreviewAugmentations(
+          await transformPreviewHtml(fallbackHtml, adapter, project, fallback.compositionPath),
+          adapter,
+          project.dir,
+          fallback.compositionPath,
+        );
+        if (previewVariables) {
+          fallbackAugmented = injectPreviewVariables(fallbackAugmented, previewVariables);
+        }
+        fallbackAugmented = await injectMediaCodecMap(
+          fallbackAugmented,
+          adapter,
+          project.dir,
+          fallback.compositionPath,
+          mediaCodecProbeCache,
+        );
+        return fallbackAugmented;
+      }
+      return null;
+    }
+  }
 
   // Bundled composition preview
   // fallow-ignore-next-line complexity
@@ -338,114 +461,33 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
         headers: previewCacheHeaders(etag),
       });
     }
-
-    // Normalize + persist data-hf-id to disk before bundle reads it. Idempotent.
-    const diskMain = resolveProjectMainHtml(project.dir, project.id);
-    const normalizedDisk = diskMain
-      ? persistHfIdsIfNeeded(join(project.dir, diskMain.compositionPath), diskMain.html)
-      : null;
-
-    try {
-      let bundled = await adapter.bundle(project.dir);
-      let mainCompositionPath = "index.html";
-      if (!bundled) {
-        if (!diskMain) return c.text("not found", 404);
-        // Disk HTML may carry a baked inline runtime from a prior export; strip
-        // it so the preview runtime injected below isn't double-loaded (the
-        // bundled path already strips via htmlBundler). Idempotent if absent.
-        bundled = stripEmbeddedRuntimeScripts(normalizedDisk ?? diskMain.html);
-        mainCompositionPath = diskMain.compositionPath;
-      }
-
-      // Inject runtime if not already present (check URL pattern and bundler attribute)
-      if (
-        !bundled.includes("hyperframe.runtime") &&
-        !bundled.includes("hyperframes-preview-runtime")
-      ) {
-        const runtimeTag = `<script src="${adapter.runtimeUrl}"></script>`;
-        bundled = bundled.includes("</body>")
-          ? bundled.replace("</body>", `${runtimeTag}\n</body>`)
-          : bundled + `\n${runtimeTag}`;
-      }
-
-      // Inject <base> for relative asset resolution
-      const baseHref = `/api/projects/${project.id}/preview/`;
-      if (!bundled.includes("<base")) {
-        bundled = bundled.replace(/<head>/i, `<head><base href="${baseHref}">`);
-      }
-
-      // ensureHfIds runs after transformPreviewHtml in case the adapter injected
-      // new elements. On the no-bundle path bundled=normalizedDisk (already tagged)
-      // so this is idempotent. On the bundled path the bundler may return untagged
-      // HTML (stale cache); because ids are content-keyed the minted ids will match
-      // the ids already written to disk by persistHfIdsIfNeeded above.
-      bundled = injectStudioPreviewAugmentations(
-        ensureHfIds(await transformPreviewHtml(bundled, adapter, project, mainCompositionPath)),
-        adapter,
-        project.dir,
-        mainCompositionPath,
-      );
-      if (previewVariables) bundled = injectPreviewVariables(bundled, previewVariables);
-      bundled = await injectMediaCodecMap(
-        bundled,
-        adapter,
-        project.dir,
-        mainCompositionPath,
-        mediaCodecProbeCache,
-      );
-      return c.html(bundled, 200, previewCacheHeaders(etag));
-    } catch {
-      // Re-read disk on bundle failure so we serve the latest file content,
-      // not the pre-request snapshot that may have been saved over.
-      const fallback = resolveProjectMainHtml(project.dir, project.id);
-      if (fallback) {
-        const fallbackHtml = persistHfIdsIfNeeded(
-          join(project.dir, fallback.compositionPath),
-          fallback.html,
-        );
-        let fallbackAugmented = injectStudioPreviewAugmentations(
-          await transformPreviewHtml(fallbackHtml, adapter, project, fallback.compositionPath),
-          adapter,
-          project.dir,
-          fallback.compositionPath,
-        );
-        if (previewVariables) {
-          fallbackAugmented = injectPreviewVariables(fallbackAugmented, previewVariables);
-        }
-        fallbackAugmented = await injectMediaCodecMap(
-          fallbackAugmented,
-          adapter,
-          project.dir,
-          fallback.compositionPath,
-          mediaCodecProbeCache,
-        );
-        return c.html(fallbackAugmented, 200, previewCacheHeaders(etag));
-      }
-      return c.text("not found", 404);
+    const builtKey = `${project.id}\n${etag}`;
+    const cached = builtPreviews.get(builtKey) ?? adapter.previewDocuments?.read(builtKey);
+    if (cached) {
+      rememberPreview(builtKey, cached);
+      return c.html(cached, 200, previewCacheHeaders(etag));
     }
+    let pending = previewBuilds.get(builtKey);
+    if (!pending) {
+      pending = buildPreview(project, previewVariables, builtKey).finally(() =>
+        previewBuilds.delete(builtKey),
+      );
+      previewBuilds.set(builtKey, pending);
+    }
+    const html = await pending;
+    if (!html) return c.text("not found", 404);
+    return c.html(html, 200, previewCacheHeaders(etag));
   });
 
-  /**
-   * Pin hf-ids to the RAW sub-comp file before the build pipeline mutates
-   * attributes (rewriteRelativePaths etc.) — minting is content-keyed over
-   * attrs, so stamping only AFTER the rewrite mints preview-only ids that
-   * exist nowhere in the source. Pinned ids ride through the rewrite
-   * unchanged, keeping the served DOM, the disk file, and the studio SDK
-   * session in one id space. Mirrors the main-preview route's
-   * persistHfIdsIfNeeded call.
-   *
-   * Gated to composition files: the wildcard route serves any project path,
-   * and stamping a non-HTML file (SVG, etc.) would corrupt it on disk.
-   *
-   * Returns the stamped content to thread into the build (so served ids match
-   * the mint even when the disk write is skipped — read-only fs), undefined
-   * for non-HTML paths, or null when the file vanished after the caller's
-   * stat. stampFileHfIds does its validation, read, and write through one
-   * file descriptor, so there is no check/read/write path gap to race.
-   */
+  /** Ids minted from the raw file before the build rewrites attributes, so they match the source's;
+   * in memory only, since a write here reaches the watcher as an outside edit. null: the file vanished. */
   function pinSubCompHfIds(compFile: string, compPath: string): string | undefined | null {
     if (!/\.html?$/i.test(compPath)) return undefined;
-    return stampFileHfIds(compFile);
+    try {
+      return ensureHfIds(readFileSync(compFile, "utf-8"));
+    } catch {
+      return null;
+    }
   }
 
   // Sub-composition preview
@@ -459,10 +501,11 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
     const vars = previewVariablesFromRequest(c.req.query("variables"));
     if (vars.error !== undefined) return c.json({ error: vars.error }, 400);
     const previewVariables = vars.values;
-    const compPath = decodeURIComponent(
-      c.req.path.replace(`/projects/${project.id}/preview/comp/`, "").split("?")[0] ?? "",
-    );
+    const compPath = requestSubPath(c.req.url, "projects/:id/preview/comp");
     const compFile = resolveWithinProject(project.dir, compPath);
+    if (compFile) recordPreviewRead(project.dir, compFile);
+    // The sub-composition document takes its head from the root.
+    recordPreviewRead(project.dir, "index.html");
     if (!compFile || !existsSync(compFile) || !statSync(compFile).isFile()) {
       return c.text("not found", 404);
     }
@@ -492,6 +535,7 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
       stamped,
     );
     if (!html) return c.text("not found", 404);
+    recordPreviewReferences(project.dir, html);
     html = ensureHfIds(await transformPreviewHtml(html, adapter, project, compPath));
     html = injectStudioPreviewAugmentations(html, adapter, project.dir, compPath);
     if (previewVariables) html = injectPreviewVariables(html, previewVariables);
@@ -504,18 +548,17 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
   api.get("/projects/:id/preview/*", async (c) => {
     const project = await adapter.resolveProject(c.req.param("id"));
     if (!project) return c.json({ error: "not found" }, 404);
-    const subPath = decodeURIComponent(
-      c.req.path.replace(`/projects/${project.id}/preview/`, "").split("?")[0] ?? "",
-    );
+    const subPath = requestSubPath(c.req.url, "projects/:id/preview");
     // Assets are read-only and should mirror the renderer: permit a path that
     // is lexically inside the project even if an explicit project symlink
     // targets a shared directory outside it. Composition source files still
-    // use resolveWithinProject because preview mutates their data-hf-id values.
+    // use resolveWithinProject because saves write their data-hf-id values.
     const candidate = resolve(project.dir, subPath);
     const file = isWithinProjectRoot(project.dir, candidate) ? candidate : null;
     if (!file) {
       return c.text("not found", 404);
     }
+    recordPreviewRead(project.dir, file);
     const stat = existsSync(file) ? statSync(file) : null;
     if (!stat?.isFile()) {
       return c.text("not found", 404);
@@ -538,7 +581,7 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
       ) {
         return c.text("not found", 404);
       }
-      const facts = await probeAssetCodec(file);
+      const facts = await probeAssetCodec(file, undefined, mediaCodecProbeCache);
       const eligibility = decideMediaProxyEligibility(facts);
       if (!eligibility.eligible) {
         return c.text(`media proxy unavailable: ${eligibility.reason}`, 422);
@@ -550,15 +593,13 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
       }
     }
 
-    const etag = `"${stat.mtimeMs.toString(36)}-${stat.size.toString(36)}${proxyEtagSalt(proxyVariant)}"`;
+    const tag = settledFileTag(stat);
+    const etag = tag && `"${tag}${proxyEtagSalt(proxyVariant)}"`;
     const cacheHeaders: Record<string, string> = isText
       ? { "Cache-Control": "no-store" }
-      : {
-          "Cache-Control": "private, no-cache",
-          ETag: etag,
-        };
+      : { "Cache-Control": "private, no-cache", ...(etag && { ETag: etag }) };
 
-    if (!isText) {
+    if (!isText && etag) {
       const ifNoneMatch = c.req.header("If-None-Match");
       if (ifNoneMatch === etag) {
         return new Response(null, { status: 304, headers: cacheHeaders });

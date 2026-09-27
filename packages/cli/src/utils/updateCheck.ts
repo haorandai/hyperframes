@@ -4,6 +4,7 @@ import { compareVersions } from "compare-versions";
 import { readConfig, readConfigFresh, writeConfig } from "../telemetry/config.js";
 import { VERSION } from "../version.js";
 import { isDevMode } from "./env.js";
+import { hostAnswers } from "./hostAnswers.js";
 import { detectInstaller } from "./installerDetection.js";
 import { readPinnedHyperframesVersions } from "./projectPin.js";
 import { isSafeVersion } from "./safeVersion.js";
@@ -41,10 +42,11 @@ export interface UpdateMeta {
  * Check npm registry for the latest version. Uses a 24h cache to avoid
  * hitting the registry on every invocation.
  *
- * @param force - Skip cache and fetch fresh data
+ * @param force - Skip the cache, opt-outs and DNS probe: the caller waits for the registry
  */
 export async function checkForUpdate(force?: boolean): Promise<UpdateCheckResult> {
   const config = readConfig();
+  if (!force && updateCheckDisabled()) return fallbackResult(config.latestVersion);
   const now = Date.now();
 
   // Also guard the cache read: a cache written before this boundary guard
@@ -66,6 +68,9 @@ export async function checkForUpdate(force?: boolean): Promise<UpdateCheckResult
   }
 
   try {
+    if (!force && !(await hostAnswers(new URL(NPM_REGISTRY_URL).hostname))) {
+      return fallbackResult(config.latestVersion);
+    }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     const res = await fetch(NPM_REGISTRY_URL, {
@@ -156,17 +161,19 @@ export function printDeprecationNotice(command: string): void {
   );
 }
 
-/**
- * True when update / freshness notices should stay silent — CI, non-TTY, dev
- * mode, or the HYPERFRAMES_NO_UPDATE_CHECK opt-out. Shared with the skills
- * freshness notice so both honour the same gating.
- */
-export function updateNoticesSuppressed(): boolean {
+/** True when the update check is off: dev mode, CI, or the HYPERFRAMES_NO_UPDATE_CHECK opt-out. */
+export function updateCheckDisabled(): boolean {
   if (isDevMode()) return true;
   if (process.env["CI"] === "true" || process.env["CI"] === "1") return true;
-  if (!process.stderr.isTTY) return true;
-  if (process.env["HYPERFRAMES_NO_UPDATE_CHECK"] === "1") return true;
-  return false;
+  return process.env["HYPERFRAMES_NO_UPDATE_CHECK"] === "1";
+}
+
+/**
+ * True when update / freshness notices should stay silent: the check is off or stderr is not a
+ * terminal. Shared with the skills freshness notice so both honour the same gating.
+ */
+export function updateNoticesSuppressed(): boolean {
+  return updateCheckDisabled() || !process.stderr.isTTY;
 }
 
 /**
@@ -197,20 +204,16 @@ export function printUpdateNotice(): void {
 const STALE_PIN_THROTTLE_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Actionable, throttled notice for a project whose package.json still pins an
- * OLD hyperframes version. Unlike printUpdateNotice this DOES fire on non-TTY
- * (agents render with piped stderr) \u2014 but only when there's a concrete stale
- * pin to act on, at most once/24h per install, and never under --json/CI/dev/
- * opt-out. The whole cli.ts update block is already skipped for --json, so a
- * JSON stdout stays clean regardless.
+ * Actionable notice when the running CLI is older than the project's pin (every
+ * run), or when the pin is older than the latest release (once/24h per install).
+ * Unlike printUpdateNotice this DOES fire on non-TTY (agents render with piped
+ * stderr), but never under --json/CI/dev/opt-out: the whole cli.ts update block
+ * is skipped for --json, so a JSON stdout stays clean regardless.
  */
 export function printStalePinNotice(cwd: string = process.cwd()): void {
   if (isDevMode()) return;
   if (process.env["CI"] === "true" || process.env["CI"] === "1") return;
   if (process.env["HYPERFRAMES_NO_UPDATE_CHECK"] === "1") return;
-
-  const latest = getUpdateMeta().latestVersion;
-  if (!latest || !isSafeVersion(latest)) return;
 
   let scripts: Record<string, string> = {};
   try {
@@ -220,7 +223,20 @@ export function printStalePinNotice(cwd: string = process.cwd()): void {
   } catch {
     return;
   }
-  const stale = readPinnedHyperframesVersions(scripts).filter((v) => {
+  const pins = readPinnedHyperframesVersions(scripts);
+  // A CLI older than the pin (e.g. a stale npx cache) misjudges every run, so this is never throttled.
+  const newerPins = pins.filter((v) => isNewerSemver(v, VERSION)).sort(compareVersions);
+  if (newerPins.length > 0) {
+    process.stderr.write(
+      `\n  This is hyperframes ${VERSION}, but this project pins hyperframes@${newerPins.join(", ")}.\n` +
+        `  Run it through the project's npm scripts, or npx hyperframes@${newerPins.at(-1)}.\n\n`,
+    );
+    return;
+  }
+
+  const latest = getUpdateMeta().latestVersion;
+  if (!latest || !isSafeVersion(latest)) return;
+  const stale = pins.filter((v) => {
     try {
       return compareVersions(latest, v) > 0;
     } catch {

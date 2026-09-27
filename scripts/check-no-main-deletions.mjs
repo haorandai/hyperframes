@@ -44,6 +44,34 @@ const SIMULATED_CURSOR_REASON =
 
 export const ALLOWED_DELETIONS = new Map([
   [
+    "packages/studio/src/player/components/automationGestureKeys.ts",
+    "automation-lane saves now persist once per gesture through the timeline save, so no caller needs a gesture undo key",
+  ],
+  [
+    "packages/studio/src/player/components/automationGestureKeys.test.ts",
+    "tests for the removed automation gesture undo keys",
+  ],
+  [
+    "packages/studio/src/utils/editHistory.ts",
+    "held only EditHistoryKind; recordEdit's kind was never sent to the project history, so it and every caller's copy go",
+  ],
+  [
+    "packages/studio/src/utils/editHistoryStorage.ts",
+    "Studio's undo moves onto the project history (studio-server); the browser IndexedDB history and its reducer are removed",
+  ],
+  [
+    "packages/studio/src/utils/editHistoryStorage.test.ts",
+    "tests for the removed IndexedDB history store",
+  ],
+  [
+    "packages/studio/src/utils/editHistory.test.ts",
+    "tests for the removed in-browser history reducer; merging and undo are tested in projectHistory.test.ts",
+  ],
+  [
+    "packages/studio/src/hooks/usePersistentEditHistory.projectOwnership.test.tsx",
+    "tests the removed per-project IndexedDB store; the hook now posts to the project's own history routes",
+  ],
+  [
     "packages/studio/src/components/nle/TimelinePane.test.ts",
     "its only subject, the expandedParentStart rebase wrappers, is dead code now removed",
   ],
@@ -1061,6 +1089,16 @@ export const ALLOWED_DELETIONS = new Map([
   ["registry/components/simulated-cursor/demo.html", SIMULATED_CURSOR_REASON],
   ["registry/components/simulated-cursor/registry-item.json", SIMULATED_CURSOR_REASON],
   ["registry/components/simulated-cursor/simulated-cursor.html", SIMULATED_CURSOR_REASON],
+  [
+    "packages/studio-server/src/helpers/previewWatchIgnore.ts",
+    "preview.watchIgnore is replaced by reloading only when a file the preview loaded changes",
+  ],
+  [
+    "packages/studio-server/src/helpers/previewWatchIgnore.test.ts",
+    "tests for the removed preview.watchIgnore helper",
+  ],
+  ["docs/images/preview-reload-evidence/after.webm", "evidence video no page referenced"],
+  ["docs/images/preview-reload-evidence/before.webm", "evidence video no page referenced"],
 ]);
 
 export function parseBase(argv, fallback = "origin/main") {

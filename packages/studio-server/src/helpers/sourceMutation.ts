@@ -20,10 +20,11 @@ export interface SourceMutationTarget {
   selectorIndex?: number;
 }
 
-export function parseSourceDocument(source: string): {
+export function parseSourceDocument(raw: string): {
   document: Document;
   wrappedFragment: boolean;
 } {
+  const source = ensureHfIds(raw);
   const hasDocumentShell = /<!doctype|<html[\s>]/i.test(source);
   if (hasDocumentShell) {
     return { document: parseHTML(source).document, wrappedFragment: false };
@@ -401,12 +402,13 @@ export function splitElementInHtml(
           ? "data-media-start"
           : null;
   if (playbackStartAttr) {
-    const currentTrim =
-      parseFloat(el.getAttribute(playbackStartAttr) ?? "") || fallbackTiming?.playbackStart || 0;
+    const authoredTrim = parseFloat(el.getAttribute(playbackStartAttr) ?? "");
+    const currentTrim = authoredTrim || fallbackTiming?.playbackStart || 0;
     const rateRaw = parseFloat(el.getAttribute("data-playback-rate") ?? "");
     const rate =
       Number.isFinite(rateRaw) && rateRaw > 0 ? rateRaw : (fallbackTiming?.playbackRate ?? 1);
-    el.setAttribute(playbackStartAttr, String(Math.round(currentTrim * 1000) / 1000));
+    if (authoredTrim !== currentTrim)
+      el.setAttribute(playbackStartAttr, String(Math.round(currentTrim * 1000) / 1000));
     clone.setAttribute(
       playbackStartAttr,
       String(Math.round((currentTrim + firstDuration * rate) * 1000) / 1000),

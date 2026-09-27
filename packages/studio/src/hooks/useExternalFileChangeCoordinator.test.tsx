@@ -74,9 +74,93 @@ describe("external file change coordinator", () => {
       onAcceptedPersistedFileChange: () => order.push("thumbnail"),
       reloadPreview: () => order.push("preview"),
       reloadSdkSession: () => order.push("sdk"),
+      refreshFileTree: () => {
+        order.push("tree");
+      },
     });
     await act(async () => handler?.({ path: "index.html", content: "external", version: "v2" }));
-    expect(order).toEqual(["drain", "thumbnail", "preview", "sdk"]);
+    expect(order).toEqual(["drain", "thumbnail", "preview", "sdk", "tree"]);
+    expect(captured.handle?.blocked).toBeNull();
+  });
+
+  // The file tree (useFileTree) is only ever refreshed from Studio's own file
+  // operations (create/delete/rename/upload) — never on an external change.
+  // Without this call, an agent removing or replacing a composition updates
+  // the preview and the SDK session but leaves the listing stale forever.
+  it("refreshes the file tree on an accepted external change", async () => {
+    const refreshFileTree = vi.fn();
+    await mountCoordinator({ refreshFileTree });
+    await act(async () => handler?.({ path: "index.html", content: "external", version: "v2" }));
+    expect(refreshFileTree).toHaveBeenCalledOnce();
+  });
+
+  it("refreshes the file tree but not Preview for a file the preview never loaded", async () => {
+    const order: string[] = [];
+    await mountCoordinator({
+      reloadPreview: () => order.push("preview"),
+      reloadSdkSession: () => order.push("sdk"),
+      refreshFileTree: () => {
+        order.push("tree");
+      },
+    });
+    await act(async () =>
+      handler?.({ path: "notes.md", content: "notes", version: "v1", affectsPreview: false }),
+    );
+    expect(order).toEqual(["sdk", "tree"]);
+  });
+
+  it("still reloads Preview when a notes change replaces a waiting film change", async () => {
+    let release = () => {};
+    const inFlight = new Promise<void>((resolve) => (release = resolve));
+    const reloadPreview = vi.fn();
+    const reloadSdkSession = vi.fn();
+    const onAcceptedPersistedFileChange = vi.fn();
+    let drains = 0;
+    await mountCoordinator({
+      reloadPreview,
+      reloadSdkSession,
+      onAcceptedPersistedFileChange,
+      drainPendingChanges: async () => {
+        if (drains++ === 0) await inFlight;
+        return { status: "clean" as const };
+      },
+    });
+    await act(async () => handler?.({ path: "index.html", content: "a", version: "v1" }));
+    await act(async () =>
+      handler?.({
+        path: "scene.html",
+        content: "b",
+        version: "v2",
+        affectedCompositions: ["scene.html"],
+      }),
+    );
+    await act(async () =>
+      handler?.({ path: "notes.md", content: "c", version: "v3", affectsPreview: false }),
+    );
+    await act(async () => release());
+    expect(reloadPreview).toHaveBeenCalledTimes(2);
+    expect(reloadSdkSession).toHaveBeenLastCalledWith("scene.html");
+    expect(onAcceptedPersistedFileChange).toHaveBeenLastCalledWith("scene.html", ["scene.html"]);
+  });
+
+  it("does not refresh the tree for a suppressed self-write echo", async () => {
+    const refreshFileTree = vi.fn();
+    await mountCoordinator({ refreshFileTree });
+    markStudioWriteToken("studio-write-1");
+    await act(async () =>
+      handler?.({
+        path: "index.html",
+        content: "studio",
+        version: "v2",
+        writeToken: "studio-write-1",
+      }),
+    );
+    expect(refreshFileTree).not.toHaveBeenCalled();
+  });
+
+  it("is optional — an accepted change with no refreshFileTree collaborator does not throw", async () => {
+    const { captured } = await mountCoordinator({ refreshFileTree: undefined });
+    await act(async () => handler?.({ path: "index.html", content: "external", version: "v2" }));
     expect(captured.handle?.blocked).toBeNull();
   });
 
