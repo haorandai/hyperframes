@@ -3236,7 +3236,11 @@ export function initSandboxRuntimeModular(): void {
   };
   // Swap edited scenes in place from a rebuilt preview document. Refuses before changing anything unless
   // the documents differ only inside existing scenes; a later failure is left to the caller's reload.
-  const swapScenes = async (html: string): Promise<void> => {
+  const swapScenes = async (html: string, signal?: AbortSignal): Promise<void> => {
+    const refuseCancelled = () => {
+      if (signal?.aborted) throw new Error("the swap was cancelled");
+    };
+    refuseCancelled();
     const generation = sceneSwapGeneration;
     const next = new DOMParser().parseFromString(html, "text/html");
     const liveParts = readSceneParts(document);
@@ -3283,19 +3287,29 @@ export function initSandboxRuntimeModular(): void {
       if (styleCount(oldParts) !== styleCount(newParts)) {
         throw new Error(`scene ${name} cannot be swapped: its styles moved`);
       }
-      return { name, oldParts, newParts, oldHost, newHost };
+      return {
+        name,
+        oldParts,
+        homes: oldParts.map((el) => el.parentNode),
+        newParts,
+        oldHost,
+        newHost,
+      };
     });
     // Fetched before the first write, so a stalled or failed request leaves the page as it was.
     const captionOverrides = swaps.some(({ newHost }) => newHost.querySelector(".caption-group"))
       ? await fetchCaptionOverrides()
       : [];
     if (state.tornDown) throw new Error("the preview was torn down during the swap");
+    refuseCancelled();
     if (generation !== sceneSwapGeneration) {
       throw new Error("the preview changed while this swap waited");
     }
-    // A data handler or a revert callback can replace a scene's parts; the swap would then act on detached copies.
+    // A data handler or a revert callback can replace or move a scene's parts; the swap would then lose the scene.
     const refuseReplacedScenes = () => {
-      if (swaps.some(({ oldParts }) => oldParts.some((el) => !el.isConnected))) {
+      const moved = ({ oldParts, homes }: (typeof swaps)[number]) =>
+        oldParts.some((el, i) => !el.isConnected || el.parentNode !== homes[i]);
+      if (swaps.some(moved)) {
         throw new Error("a scene changed while this swap waited");
       }
     };
@@ -3409,8 +3423,9 @@ export function initSandboxRuntimeModular(): void {
     runAdapters("discover", state.currentTime);
     // The rebind above skips these when the root timeline object did not change.
     applyPositionEdits(document);
-    // Redraw the current frame as a seek does, forcing a render at an unchanged time.
-    transport.seek(state.currentTime, { keepPlaying: true });
+    // Redraw the current frame as a seek does; a playing film cut to end at or before it stops there, as at its end.
+    const cutShort = clock.isPlaying() && duration > 0 && state.currentTime >= duration;
+    transport.seek(cutShort ? duration : state.currentTime, { keepPlaying: !cutShort });
     syncTimedElementVisibility(state.currentTime);
     postTimeline();
   };

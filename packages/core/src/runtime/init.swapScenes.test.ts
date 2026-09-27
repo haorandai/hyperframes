@@ -173,7 +173,7 @@ const cssText = () =>
   [...document.head.querySelectorAll("style")].map((s) => s.textContent).join("");
 
 // Boots A1 and B, then starts swapping in a captioned A whose caption overrides have not arrived.
-async function bootWithPendingCaptions() {
+async function bootWithPendingCaptions(signal?: AbortSignal) {
   const { root } = trackingRoot();
   (window as unknown as { gsap: unknown }).gsap = { set: () => {} };
   let answer: (r: Response) => void = () => {};
@@ -184,7 +184,7 @@ async function bootWithPendingCaptions() {
   await tick();
   const before = document.documentElement.innerHTML;
   const captions: Scene = { ...A2, body: '<div class="caption-group"><span>w</span></div>' };
-  const swap = window.__hfSwapScenes!(preview([captions, B]).html);
+  const swap = window.__hfSwapScenes!(preview([captions, B]).html, signal);
   return { swap, before, answer: (r: Response) => answer(r) };
 }
 
@@ -1077,6 +1077,28 @@ window.__timelines.a = tl;`;
     expect(manifest()).toBe(before);
   });
 
+  it("refuses a swap whose scene host moved to another parent while its caption overrides loaded", async () => {
+    const { swap, answer } = await bootWithPendingCaptions();
+    const manifest = () =>
+      document.querySelector('meta[name="hf-scene-parts"]')?.getAttribute("content");
+    const before = manifest();
+    // As a runtime-data handler may: the host stays in the page, outside the film.
+    document.body.appendChild(sceneHost("a"));
+    answer(new Response("null", { status: 404 }));
+    await expect(swap).rejects.toThrow("a scene changed while this swap waited");
+    expect(manifest()).toBe(before);
+  });
+
+  it("refuses a swap the caller cancelled while its caption overrides loaded, changing nothing", async () => {
+    const cancel = new AbortController();
+    const { swap, before, answer } = await bootWithPendingCaptions(cancel.signal);
+    cancel.abort();
+    answer(new Response("null", { status: 404 }));
+    await expect(swap).rejects.toThrow("the swap was cancelled");
+    expect(document.documentElement.innerHTML).toBe(before);
+    expect(made.a1!.kill).not.toHaveBeenCalled();
+  });
+
   it("refuses when stopping a scene's timeline replaces the registry with one moving another scene", async () => {
     const { root } = trackingRoot();
     (window as unknown as { gsap: unknown }).gsap = { set: () => {} };
@@ -1133,6 +1155,34 @@ window.__timelines.a = tl;`;
       "a scene changed while this swap waited",
     );
     delete (window as unknown as { gsap?: unknown }).gsap;
+  });
+
+  it("refuses when stopping a scene's timeline moves that scene's host to another parent", async () => {
+    const { root } = trackingRoot();
+    (window as unknown as { gsap: unknown }).gsap = { set: () => {} };
+    Object.assign(made.a1!, { revert: () => void document.body.appendChild(sceneHost("a")) });
+    boot([A1, B], root);
+    await tick();
+    await expect(window.__hfSwapScenes!(preview([A2, B]).html)).rejects.toThrow(
+      "a scene changed while this swap waited",
+    );
+    delete (window as unknown as { gsap?: unknown }).gsap;
+  });
+
+  it("stops a playing film at its new end when the edit shortens it to before the playhead", async () => {
+    const { root } = trackingRoot();
+    let length = 6;
+    root.duration = () => length;
+    boot([A1, B], root);
+    // An auto-duration film: its length follows the timeline.
+    document.querySelector("[data-root]")!.removeAttribute("data-duration");
+    await tick();
+    window.__player!.seek(5.5);
+    window.__player!.play();
+    expect(window.__player!.isPlaying()).toBe(true);
+    length = 5;
+    await window.__hfSwapScenes!(preview([A2, B]).html);
+    expect([window.__player!.isPlaying(), window.__player!.getTime()]).toEqual([false, 5]);
   });
 
   it("runs the new scene scripts once every edited scene is replaced, so none binds to one still to go", async () => {
