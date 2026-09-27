@@ -3,7 +3,7 @@
   "name": "starfield",
   "type": "hyperframes:block",
   "title": "Starfield",
-  "description": "Seek-safe twinkling night-sky overlay: sparse or dense stars in a radial-masked field that keeps the frame center clear",
+  "description": "Seek-safe night-sky overlay: sparse or dense stars in three size tiers that twinkle and drift in two parallax layers, radial-masked to keep the frame center clear",
   "tags": [
     "starfield",
     "night-sky",
