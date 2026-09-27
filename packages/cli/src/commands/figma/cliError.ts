@@ -32,7 +32,6 @@ export async function withFigmaErrors(command: string, fn: () => Promise<void>):
           kind: "command_error",
           endpoint: err instanceof FigmaClientError ? err.endpoint : undefined,
         });
-        await telemetry.flush();
       } catch {
         // Telemetry must never mask the real command failure.
       }

@@ -7,14 +7,12 @@ const originalExitCode = process.exitCode;
 afterEach(() => {
   process.argv = [...originalArgv];
   process.exitCode = originalExitCode;
-  vi.doUnmock("./commands/init.js");
-  vi.doUnmock("./telemetry/events.js");
-  vi.doUnmock("./telemetry/index.js");
+  for (const path of MOCKED_MODULES) vi.doUnmock(path);
   vi.resetModules();
 });
 
 describe("CLI lifecycle", () => {
-  it("queues a command failure before finalizing telemetry", async () => {
+  it("queues a command failure before exit, without waiting on a network flush", async () => {
     let resolveEvents!: (events: {
       trackCommandFailure: (command: string, error: unknown) => void;
     }) => void;
@@ -37,10 +35,9 @@ describe("CLI lifecycle", () => {
       },
     }));
     vi.doMock("./telemetry/index.js", () => ({
-      flush: async () => {
-        order.push("flush");
-      },
-      flushSync: vi.fn(),
+      // Never settles: a finalize that awaited it would hang this test.
+      flush: () => new Promise<void>(() => {}),
+      flushSync: () => order.push("flushSync"),
       incrementCommandCount: vi.fn(),
       showTelemetryNotice: vi.fn(),
       shouldTrack: () => false,
@@ -65,8 +62,9 @@ describe("CLI lifecycle", () => {
       },
     });
     await execution;
+    process.emit("exit", 0);
 
-    expect(order).toEqual(["cli_error", "flush"]);
+    expect(order).toEqual(["cli_error", "flushSync"]);
   });
 
   it("hands queued events to flushSync even after finalizeCli has run", async () => {
@@ -233,7 +231,42 @@ describe("CLI lifecycle", () => {
       exitSpy.mockRestore();
     }
   });
+
+  it("starts the background checks in a child and reads only the caches itself", async () => {
+    const launchBackgroundChecks = vi.fn();
+    const checkForUpdate = vi.fn();
+    mockInitCommand(vi.fn());
+    mockTelemetry();
+    vi.doMock("./utils/autoUpdate.js", () => ({
+      reportCompletedUpdate: vi.fn(),
+      scheduleBackgroundInstall: vi.fn(),
+    }));
+    vi.doMock("./utils/updateCheck.js", () => ({
+      cachedUpdateCheck: () => ({ current: "1.0.0", latest: "1.0.0", updateAvailable: false }),
+      checkForUpdate,
+      printUpdateNotice: vi.fn(),
+      printStalePinNotice: vi.fn(),
+    }));
+    vi.doMock("./utils/skillsUpdateCheck.js", () => ({ printSkillsUpdateNotice: vi.fn() }));
+    vi.doMock("./utils/backgroundChecks.js", () => ({ launchBackgroundChecks }));
+
+    process.argv = ["node", "cli.ts", "init"];
+    await import("./cli.js");
+
+    await vi.waitFor(() => expect(launchBackgroundChecks).toHaveBeenCalledTimes(1));
+    expect(checkForUpdate).not.toHaveBeenCalled();
+  });
 });
+
+const MOCKED_MODULES = [
+  "./commands/init.js",
+  "./telemetry/events.js",
+  "./telemetry/index.js",
+  "./utils/autoUpdate.js",
+  "./utils/updateCheck.js",
+  "./utils/skillsUpdateCheck.js",
+  "./utils/backgroundChecks.js",
+];
 
 function mockInitCommand(run: () => void): void {
   vi.doMock("./commands/init.js", () => ({
