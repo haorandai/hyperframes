@@ -20,7 +20,7 @@ import type { StereoLevel } from "@hyperframes/core/runtime/levelTap";
 import { usePlayerStore } from "../../player";
 import { clampNumber } from "../../utils/studioHelpers";
 import { useAudioMetersVisible } from "../../utils/audioMeterVisibility";
-import { useStudioShellContext } from "../../contexts/StudioContext";
+import { useStudioShellContextOptional } from "../../contexts/StudioContext";
 import { useTimelineEditContextOptional } from "../../contexts/TimelineEditContext";
 import {
   METER_DB_MARKS,
@@ -179,8 +179,13 @@ export function stepAndPaintStrips(
 }
 
 /** One rAF loop re-reads the hook off the live preview window, so a reloaded iframe is followed. */
-function useMeterLoop(strips: Strip[], bars: RefObject<Map<string | null, StripBars>>) {
-  const { previewIframeRef } = useStudioShellContext();
+function useMeterLoop(
+  strips: Strip[],
+  bars: RefObject<Map<string | null, StripBars>>,
+  iframeRef: RefObject<HTMLIFrameElement | null> | undefined,
+) {
+  const shell = useStudioShellContextOptional();
+  const previewIframeRef = iframeRef ?? shell?.previewIframeRef;
   const stripsRef = useRef(strips);
   stripsRef.current = strips;
   useEffect(() => {
@@ -190,7 +195,7 @@ function useMeterLoop(strips: Strip[], bars: RefObject<Map<string | null, StripB
     const state = new Map<string | null, Pair>();
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
-      active = followMeterHook(active, readHook(previewIframeRef.current));
+      active = followMeterHook(active, readHook(previewIframeRef?.current ?? null));
       const levels = active?.read();
       const dt = now - last;
       last = now;
@@ -395,14 +400,20 @@ function MeterStrip({
   );
 }
 
-export const AudioMeterStrip = memo(function AudioMeterStrip() {
+export interface AudioMeterStripProps {
+  previewIframeRef?: RefObject<HTMLIFrameElement | null>;
+}
+
+export const AudioMeterStrip = memo(function AudioMeterStrip({
+  previewIframeRef,
+}: AudioMeterStripProps) {
   const visible = useAudioMetersVisible((s) => s.visible);
   const projectHasAudio = useProjectHasAudio();
   if (!visible || !projectHasAudio) return null;
-  return <MeterStripBody />;
+  return <MeterStripBody previewIframeRef={previewIframeRef} />;
 });
 
-function MeterStripBody() {
+function MeterStripBody({ previewIframeRef }: AudioMeterStripProps) {
   const strips = useStrips();
   const bars = useRef(new Map<string | null, StripBars>());
   const register = useRef((id: string | null, b: StripBars | null) => {
@@ -410,7 +421,7 @@ function MeterStripBody() {
     else bars.current.delete(id);
   }).current;
   const { onLive, onCommit } = useVolumeHandlers();
-  useMeterLoop(strips, bars);
+  useMeterLoop(strips, bars, previewIframeRef);
   return (
     <div
       data-testid="audio-meter-strip"
