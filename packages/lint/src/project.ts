@@ -259,7 +259,6 @@ export async function lintProject(
     ...(await lintHevcPreviewCodec(collectLocalVideoCandidates(projectDir, allHtmlSources))),
   ];
   for (const finding of projectFindings) {
-    // Filed under the composition it names, so every surface labels it by that file.
     const ownFile = finding.file && resolve(projectDir, finding.file);
     const owner =
       results.find((entry) => resolve(projectDir, entry.file) === ownFile)?.result ?? rootResult;

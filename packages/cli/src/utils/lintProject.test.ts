@@ -407,8 +407,6 @@ describe("audio_src_not_found", () => {
     const { totalErrors, results } = await lintProject(project);
 
     expect(totalErrors).toBeGreaterThan(0);
-    const first = results[0];
-    expect(first).toBeDefined();
     const finding = allFindings(results).find((f) => f.code === "audio_src_not_found");
     expect(finding).toBeDefined();
     expect(finding?.severity).toBe("error");
@@ -421,8 +419,6 @@ describe("audio_src_not_found", () => {
 
     const { results } = await lintProject(project);
 
-    const first = results[0];
-    expect(first).toBeDefined();
     const finding = allFindings(results).find((f) => f.code === "audio_src_not_found");
     expect(finding).toBeUndefined();
   });
@@ -438,8 +434,6 @@ describe("audio_src_not_found", () => {
 
     const { results } = await lintProject(project);
 
-    const first = results[0];
-    expect(first).toBeDefined();
     const finding = allFindings(results).find((f) => f.code === "audio_src_not_found");
     expect(finding).toBeUndefined();
   });
@@ -453,8 +447,6 @@ describe("audio_src_not_found", () => {
     const { totalErrors, results } = await lintProject(project);
 
     expect(totalErrors).toBeGreaterThan(0);
-    const first = results[0];
-    expect(first).toBeDefined();
     const finding = allFindings(results).find((f) => f.code === "audio_src_not_found");
     expect(finding).toBeDefined();
   });
@@ -472,8 +464,6 @@ describe("audio_src_not_found", () => {
 
     const { results } = await lintProject(project);
 
-    const first = results[0];
-    expect(first).toBeDefined();
     const finding = allFindings(results).find((f) => f.code === "audio_src_not_found");
     expect(finding).toBeUndefined();
   });
@@ -487,8 +477,6 @@ describe("audio_src_not_found", () => {
 
     const { results } = await lintProject(project);
 
-    const first = results[0];
-    expect(first).toBeDefined();
     const finding = allFindings(results).find((f) => f.code === "audio_src_not_found");
     expect(finding).toBeUndefined();
   });
@@ -501,8 +489,6 @@ describe("audio_src_not_found", () => {
 
     const { results } = await lintProject(project);
 
-    const first = results[0];
-    expect(first).toBeDefined();
     const finding = allFindings(results).find((f) => f.code === "audio_src_not_found");
     expect(finding).toBeUndefined();
   });
@@ -551,8 +537,6 @@ describe("audio_src_not_found", () => {
 
     const { results } = await lintProject(project);
 
-    const first = results[0];
-    expect(first).toBeDefined();
     const finding = allFindings(results).find((f) => f.code === "audio_src_not_found");
     expect(finding).toBeUndefined();
   });
@@ -569,8 +553,6 @@ describe("audio_src_not_found", () => {
 
     const { results } = await lintProject(project);
 
-    const first = results[0];
-    expect(first).toBeDefined();
     const finding = allFindings(results).find((f) => f.code === "audio_src_not_found");
     expect(finding).toBeDefined();
     // The original (un-rewritten) src is what surfaces in the message so the
