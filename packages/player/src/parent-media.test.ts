@@ -310,6 +310,19 @@ describe("ParentMediaManager following its clips", () => {
     expect(files(mgr)).toEqual(["https://example.test/a.mov"]);
   });
 
+  it("gives a clip that replaces another on the same file its own proxy", async () => {
+    const mgr = makeManager();
+    const old = adoptedClip(mgr, "https://example.test/a.mov");
+    const replacement = document.createElement("video");
+    replacement.setAttribute("src", "https://example.test/a.mov");
+    replacement.setAttribute("data-start", "0");
+    replacement.preload = "auto";
+    document.body.replaceChild(replacement, old);
+    await flushObserver();
+
+    expect(mgr.entries.map((m) => m.source)).toEqual([replacement]);
+  });
+
   it("drops the proxy of a re-pointed clip when the clip leaves", async () => {
     const mgr = makeManager();
     const clip = adoptedClip(mgr, "https://example.test/clip.mov");

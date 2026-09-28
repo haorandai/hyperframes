@@ -413,12 +413,12 @@ export class ParentMediaManager {
   }
 
   /** One proxy per file: a second clip on the same file is heard through the first one's proxy.
-   * A proxy's file is its clip's current one; it may still be loading the clip's earlier file. */
+   * A proxy's file is its clip's current one (a clip that left the page owns none). */
   private _urlTaken(src: string, except?: ProxyEntry): boolean {
-    return this._entries.some(
-      (m) =>
-        m !== except && ((m.source && this._resolveIframeMediaSrc(m.source)) || m.el.src) === src,
-    );
+    return this._entries.some((m) => {
+      if (m === except || (m.source && !m.source.isConnected)) return false;
+      return ((m.source && this._resolveIframeMediaSrc(m.source)) || m.el.src) === src;
+    });
   }
 
   private _repointToSource(entry: ProxyEntry): boolean {
