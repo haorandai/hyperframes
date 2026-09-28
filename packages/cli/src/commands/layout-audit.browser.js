@@ -471,6 +471,52 @@
     };
   }
 
+  function horizontalTextMetrics(element, style) {
+    if (style.writingMode && style.writingMode !== "horizontal-tb") return null;
+    const context = document.createElement("canvas").getContext("2d");
+    if (!context) return null;
+    context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    let text = textContentFor(element, true);
+    if (style.textTransform === "uppercase") text = text.toUpperCase();
+    if (style.textTransform === "lowercase") text = text.toLowerCase();
+    const metrics = context.measureText(text);
+    return metrics.fontBoundingBoxAscent + metrics.fontBoundingBoxDescent > 0 ? metrics : null;
+  }
+
+  function intersectsTextWindow(rect, clip, tolerance) {
+    return (
+      Math.min(rect.right, clip.right) - Math.max(rect.left, clip.left) > tolerance &&
+      Math.min(rect.bottom, clip.bottom) - Math.max(rect.top, clip.top) > tolerance
+    );
+  }
+
+  function visibleTextLineRects(element, rects, style, clip, tolerance) {
+    const metrics = horizontalTextMetrics(element, style);
+    const fontHeight = metrics ? metrics.fontBoundingBoxAscent + metrics.fontBoundingBoxDescent : 0;
+    const lineHeight = parsePx(style.lineHeight) || fontHeight;
+    return rects.flatMap((rect) => {
+      if (!metrics) return intersectsTextWindow(rect, clip, tolerance) ? [rect] : [];
+      const scale = rect.height / fontHeight;
+      const inkTop =
+        rect.top + (metrics.fontBoundingBoxAscent - metrics.actualBoundingBoxAscent) * scale;
+      const inkBottom =
+        rect.bottom - (metrics.fontBoundingBoxDescent - metrics.actualBoundingBoxDescent) * scale;
+      const ink = { ...rect, top: inkTop, bottom: inkBottom };
+      if (!intersectsTextWindow(ink, clip, tolerance)) return [];
+      // Negative leading belongs outside the used line box. Font metrics scale
+      // with the Range rect, so zoomed cards retain the same clipping decision.
+      const inset = Math.max(0, (rect.height - lineHeight * scale) / 2);
+      return [
+        toRect({
+          ...rect,
+          top: rect.top + inset,
+          bottom: rect.bottom - inset,
+          height: rect.height - 2 * inset,
+        }),
+      ];
+    });
+  }
+
   function textOverflowIssues(element, root, rootRect, time, tolerance, clippedIssue) {
     const lineRects = textClientRects(element, true).map(toRect);
     const textRect = unionRects(lineRects);
@@ -481,18 +527,12 @@
 
     const container = nearestConstraint(element, root, rootRect);
     const containerRect = container === root ? rootRect : toRect(container.getBoundingClientRect());
-    // Glyph ink (ascenders / descenders / accents / heavy display faces) routinely exceeds a
-    // snug line-height box by a few px, proportional to font size. When the constraining box
-    // does NOT clip, that vertical spill is normal typography — it shows in the padding, nothing
-    // is hidden — not a layout defect (it false-flagged caption words). Allow a font-metric
-    // vertical tolerance there; keep it tight when the box actually clips (a real cut-off) and
-    // always tight horizontally (too-wide text is a real wrap/legibility issue).
     const elementStyle = getComputedStyle(element);
     const containerClips = clipsOverflow(
       container === root ? getComputedStyle(root) : getComputedStyle(container),
     );
     const visibleTextRect = containerClips
-      ? unionRects(lineRects.filter((line) => intersectionArea(line, containerRect) > 0))
+      ? unionRects(visibleTextLineRects(element, lineRects, elementStyle, containerRect, tolerance))
       : textRect;
     const verticalTolerance = containerClips
       ? tolerance
