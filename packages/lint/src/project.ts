@@ -258,20 +258,22 @@ export async function lintProject(
     ...(await lintVideoMediaStartPastEof(projectDir, allHtmlSources)),
     ...(await lintHevcPreviewCodec(collectLocalVideoCandidates(projectDir, allHtmlSources))),
   ];
-  if (projectFindings.length > 0) {
-    for (const finding of projectFindings) {
-      rootResult.findings.push(finding);
-      if (finding.severity === "error") {
-        rootResult.errorCount++;
-        rootResult.ok = false;
-        totalErrors++;
-      } else if (finding.severity === "warning") {
-        rootResult.warningCount++;
-        totalWarnings++;
-      } else {
-        rootResult.infoCount++;
-        totalInfos++;
-      }
+  for (const finding of projectFindings) {
+    // Filed under the composition it names, so every surface labels it by that file.
+    const ownFile = finding.file && resolve(projectDir, finding.file);
+    const owner =
+      results.find((entry) => resolve(projectDir, entry.file) === ownFile)?.result ?? rootResult;
+    owner.findings.push(finding);
+    if (finding.severity === "error") {
+      owner.errorCount++;
+      owner.ok = false;
+      totalErrors++;
+    } else if (finding.severity === "warning") {
+      owner.warningCount++;
+      totalWarnings++;
+    } else {
+      owner.infoCount++;
+      totalInfos++;
     }
   }
 
