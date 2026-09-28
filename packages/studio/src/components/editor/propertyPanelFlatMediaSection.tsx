@@ -8,7 +8,7 @@ import {
   formatNumericValue,
   formatTimingValue,
   parseNumericValue,
-  readMediaStart,
+  readClipInPoint,
   stripQueryAndHash,
 } from "./propertyPanelHelpers";
 import { FlatSelectRow, FlatSlider } from "./propertyPanelFlatPrimitives";
@@ -89,7 +89,7 @@ export function FlatMediaSection({
       ? automatedVolumeValue
       : (parseNumericValue(element.dataAttributes.volume ?? "") ?? 1);
   const volumeFaderPosition = audioGainToFaderPosition(volume);
-  const { mediaStart, mediaStartAttr } = readMediaStart(element.dataAttributes);
+  const { mediaStart, mediaStartAttr } = readClipInPoint(element.dataAttributes);
   const constantRate = Number.parseFloat(element.dataAttributes["playback-rate"] ?? "1") || 1;
   const playbackRate =
     rate?.automated && rate.automatedValue !== undefined ? rate.automatedValue : constantRate;

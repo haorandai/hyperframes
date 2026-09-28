@@ -23,7 +23,7 @@ import {
 } from "./propertyPanelAutomation";
 import { trackLeveller } from "./audioFxTelemetry.js";
 import type { DomEditSelection } from "./domEditingTypes";
-import { readMediaStart } from "./propertyPanelHelpers";
+import { readClipInPoint } from "./propertyPanelHelpers";
 import { useAuditionTransport } from "./useAuditionTransport.js";
 
 /**
@@ -86,7 +86,7 @@ export function useFxLevelling(
    * zero.
    */
   const clipWindow = (audio: { samples: Float32Array; sampleRate: number }) => {
-    const { mediaStart } = readMediaStart(element.dataAttributes);
+    const { mediaStart } = readClipInPoint(element.dataAttributes);
     const duration = positiveFinite(Number(element.dataAttributes?.["duration"] ?? Number.NaN));
     const from = mediaStart
       ? Math.min(audio.samples.length, Math.floor(mediaStart * audio.sampleRate))

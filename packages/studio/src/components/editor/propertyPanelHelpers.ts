@@ -5,8 +5,10 @@ import type { GsapAnimation } from "@hyperframes/parsers/gsap-parser";
 import type { TimelineElement } from "../../player";
 import { roundToCenti } from "../../utils/rounding";
 import { findPreviewNode } from "./domEditingElement";
-import { readPlaybackStartAttributes } from "../../player/lib/timelineElementHelpers";
-import { playbackStartAttributeForElement } from "../../hooks/timelineEditingHelpers";
+import {
+  playbackStartAttributeForElement,
+  readPlaybackStartAttributes,
+} from "../../player/lib/timelineElementHelpers";
 
 export type {
   BackgroundRemovalProgress,
@@ -227,7 +229,7 @@ export function parseNumericValue(value: string | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function readMediaStart(dataAttributes: Record<string, string> | undefined): {
+export function readClipInPoint(dataAttributes: Record<string, string> | undefined): {
   mediaStart: number;
   mediaStartAttr: string;
 } {

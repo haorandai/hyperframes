@@ -1,4 +1,4 @@
-import { MIN_PLAYBACK_RATE } from "@hyperframes/parsers/media-duration";
+import { clampPlaybackRate } from "@hyperframes/parsers/media-duration";
 import { roundToCenti } from "../../utils/rounding";
 import type { TimelineElement } from "../store/playerStore";
 import { getTimelineEditCapabilities } from "./timelineEditCapabilities";
@@ -30,7 +30,7 @@ export function resolveTimelineMinDuration(minDuration?: number): number {
 
 /** Playback rate never drops to zero (would make media-in-point math divide by ~0). */
 export function resolveTimelinePlaybackRate(rate?: number): number {
-  return Math.max(MIN_PLAYBACK_RATE, rate ?? 1);
+  return clampPlaybackRate(rate ?? 1);
 }
 
 interface TimelineStartTrimClip {
@@ -142,7 +142,7 @@ export function clampTimelineGroupResizeDelta(
   const bounds = members.map((member) => clipStartTrimDeltaBounds(member, 0, minDuration));
   const minDelta = ceilTimelineTime(Math.max(...bounds.map((b) => b.minDelta)));
   const maxDelta = Math.min(...bounds.map((b) => b.maxDelta));
-  return roundTimelineTime(clamp(rawDelta, minDelta, maxDelta));
+  return roundTimelineTime(clamp(rawDelta, minDelta, floorTimelineTime(maxDelta)));
 }
 
 export function resolveTimelineGroupResize(

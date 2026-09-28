@@ -183,6 +183,14 @@ export function readPlaybackStartAttributes(
     : {};
 }
 
+export function playbackStartAttributeForElement(
+  element: Pick<TimelineElement, "kind" | "playbackStartAttr">,
+): "data-media-start" | "data-playback-start" {
+  return element.playbackStartAttr === "playback-start" || element.kind === "composition"
+    ? "data-playback-start"
+    : "data-media-start";
+}
+
 function applyPlaybackMetadataFromElement(entry: TimelineElement, el: Element): void {
   Object.assign(
     entry,

@@ -15,6 +15,7 @@ import { getElementZIndex } from "../player/lib/layerOrdering";
 import {
   furthestClipEndFromSource,
   getTimelineElementIdentity,
+  playbackStartAttributeForElement,
   readPlaybackStartAttributes,
 } from "../player/lib/timelineElementHelpers";
 import { resolveTimelinePlaybackRate } from "../player/components/timelineGroupEditing";
@@ -201,13 +202,6 @@ export function removeIframeTimelineElements(
     findTimelineElementInIframe(iframe, element, activeCompositionPath)?.remove();
 }
 
-export function playbackStartAttributeForElement(
-  element: Pick<TimelineElement, "kind" | "playbackStartAttr">,
-): "data-media-start" | "data-playback-start" {
-  return element.playbackStartAttr === "playback-start" || element.kind === "composition"
-    ? "data-playback-start"
-    : "data-media-start";
-}
 // fallow-ignore-next-line complexity
 function resolveResizePlaybackStart(
   original: string,
@@ -225,7 +219,7 @@ function resolveResizePlaybackStart(
     readAttributeByTarget(original, target, name),
   );
   if (source.playbackStart == null) return null;
-  const attrName = playbackStartAttributeForElement({ ...element, ...source }).slice(
+  const attrName = playbackStartAttributeForElement({ kind: element.kind, ...source }).slice(
     "data-".length,
   );
   return {

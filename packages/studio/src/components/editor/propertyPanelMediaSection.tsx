@@ -8,7 +8,7 @@ import {
   formatTimingValue,
   LABEL,
   parseNumericValue,
-  readMediaStart,
+  readClipInPoint,
   RESPONSIVE_GRID,
   stripQueryAndHash,
 } from "./propertyPanelHelpers";
@@ -58,7 +58,7 @@ export function MediaSection({
   const volume = parseNumericValue(element.dataAttributes.volume ?? "") ?? 1;
   const volumeFaderPosition = audioGainToFaderPosition(volume);
 
-  const { mediaStart, mediaStartAttr } = readMediaStart(element.dataAttributes);
+  const { mediaStart, mediaStartAttr } = readClipInPoint(element.dataAttributes);
 
   const hasLoop = el.hasAttribute("loop");
   const hasMuted = el.hasAttribute("muted");
