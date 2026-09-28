@@ -1,5 +1,14 @@
 import { EventEmitter } from "node:events";
-import { lstatSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -82,8 +91,12 @@ describe("background-removal output", () => {
       try {
         await render({ inputPath: "/tmp/input.mp4", outputPath: output });
         expect(readFileSync(outside, "utf-8")).toBe("keep");
-        expect(lstatSync(output).isSymbolicLink()).toBe(false);
-        expect(readFileSync(output, "utf-8")).toBe("rendered");
+        const fd = openSync(output, constants.O_RDONLY | constants.O_NOFOLLOW);
+        try {
+          expect(readFileSync(fd, "utf-8")).toBe("rendered");
+        } finally {
+          closeSync(fd);
+        }
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
