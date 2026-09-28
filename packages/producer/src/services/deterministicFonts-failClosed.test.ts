@@ -393,6 +393,29 @@ describe("fail-closed fonts named only in an undefined var() fallback", () => {
   });
 
   it.each([
+    [`:root { --a: var(--b); --b: "Acme Brand Sans"; } body { font-family: var(--a), serif; }`],
+    [`:root { --b: "Acme Brand Sans"; } body { font-family: var(--unset, var(--b)), serif; }`],
+  ])("tolerates a family behind a chain of var()s not being found: %s", async (css) => {
+    const html = styled(css);
+    const result = await injectDeterministicFontFaces(html, {
+      failClosedFontFetch: true,
+      allowSystemFontCapture: false,
+      fetchImpl: makeHttp400Fetch(),
+    });
+    expect(result).toBe(html);
+  });
+
+  it("keeps a family required behind one defined var()", async () => {
+    const caught = await rejectedError(
+      injectDeterministicFontFaces(
+        styled(`:root { --a: "Acme Brand Sans"; } body { font-family: var(--a), serif; }`),
+        { failClosedFontFetch: true, allowSystemFontCapture: false, fetchImpl: makeHttp400Fetch() },
+      ),
+    );
+    expect(caught).toBeInstanceOf(FontFetchError);
+  });
+
+  it.each([
     ["HTTP 503", makeHttp503Fetch],
     ["a network failure", makeFailingFetch],
   ])("still fails closed on %s for a fallback-only family", async (_label, makeFetch) => {

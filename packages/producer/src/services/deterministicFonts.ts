@@ -329,8 +329,8 @@ function primaryCssVariable(
   return null;
 }
 
-/** `fallbackOnly`: named only inside the fallback of an undefined var(). */
-type ResolvedFamily = { family: string; fallbackOnly: boolean };
+/** `optional`: reached only through a var() fallback or a chain of var()s; not-found is skipped. */
+type ResolvedFamily = { family: string; optional: boolean };
 
 // Deep enough for real alias chains; stops `--a: var(--b); --b: var(--a)` cycles.
 const MAX_CSS_VARIABLE_DEPTH = 8;
@@ -338,10 +338,10 @@ const MAX_CSS_VARIABLE_DEPTH = 8;
 function resolveDeclaredFamilies(
   declaration: string,
   customProperties: ReadonlyMap<string, string>,
-  fallbackOnly = false,
+  optional = false,
   depth = 0,
 ): ResolvedFamily[] {
-  const tag = (families: string[]) => families.map((family) => ({ family, fallbackOnly }));
+  const tag = (families: string[]) => families.map((family) => ({ family, optional }));
   const families = parseFontFamilyValue(declaration);
   const variable = depth < MAX_CSS_VARIABLE_DEPTH ? primaryCssVariable(declaration) : null;
   if (!variable) return tag(families);
@@ -353,9 +353,11 @@ function resolveDeclaredFamilies(
   const primary = resolveDeclaredFamilies(
     source,
     customProperties,
-    fallbackOnly || !resolved,
+    !resolved || depth > 0,
     depth + 1,
   );
+  // An empty substitution makes the declaration invalid, so the browser inherits instead.
+  if (primary.length === 0) return [];
   return [...primary, ...tag(families.slice(1))];
 }
 
@@ -530,13 +532,13 @@ function extractRequestedFontFamilies(html: string): Map<string, ResolvedFamily>
   const requested = new Map<string, ResolvedFamily>();
   const customProperties = collectFontFamilyCustomProperties(html);
   for (const { declaration } of iterateFontFamilyDeclarations(html)) {
-    for (const { family, fallbackOnly } of resolveDeclaredFamilies(declaration, customProperties)) {
+    for (const { family, optional } of resolveDeclaredFamilies(declaration, customProperties)) {
       const normalized = family.toLowerCase();
       if (!isFetchableFamilyName(normalized)) continue;
       const seen = requested.get(normalized);
       requested.set(normalized, {
         family: seen?.family ?? family,
-        fallbackOnly: (seen?.fallbackOnly ?? true) && fallbackOnly,
+        optional: (seen?.optional ?? true) && optional,
       });
     }
   }
@@ -1561,7 +1563,7 @@ export async function injectDeterministicFontFaces(
   );
   // A fallback-only family that no source serves is tolerated; fetch failures threw above.
   const required = unresolved.filter(
-    (family) => !pendingFamilies.get(family.toLowerCase())?.fallbackOnly,
+    (family) => !pendingFamilies.get(family.toLowerCase())?.optional,
   );
   if (required.length > 0 && options.failClosedFontFetch) {
     throw new FontFetchError(
