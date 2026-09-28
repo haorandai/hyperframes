@@ -9,7 +9,7 @@
     "  Mode is a per-invocation flag, so these get their own shards.",
     "excluded: fixtures deliberately not run, each mapped to the reason why."
   ],
-  "shardCount": 8,
+  "shardCount": 9,
   "distributedShardCount": 1,
   "timings": {
     "animejs-adapter": 16,
