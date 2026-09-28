@@ -268,7 +268,7 @@ export class ParentMediaManager {
         if (isRealmHtmlMediaElement(el)) el.muted = true;
       }
     }
-    for (const m of this._entries) this._repointToSource(m);
+    for (const m of [...this._entries]) this._repointToSource(m);
 
     // One-shot alignment — bypass jitter-coalescing gate.
     const t = this._getCurrentTime();
@@ -355,7 +355,7 @@ export class ParentMediaManager {
     duration: number,
     source?: HTMLMediaElement | null,
   ): ProxyEntry | null {
-    if (this._entries.some((m) => m.el.src === src)) return null;
+    if (this._urlTaken(src)) return null;
 
     const el = tag === "video" ? document.createElement("video") : new Audio();
     el.preload = "auto";
@@ -412,24 +412,36 @@ export class ParentMediaManager {
     if (!this._isPaused()) this._playEntryIfActive(entry);
   }
 
+  /** One proxy per file: a second clip on the same file is heard through the first one's proxy.
+   * A proxy's file is its clip's current one; it may still be loading the clip's earlier file. */
+  private _urlTaken(src: string, except?: ProxyEntry): boolean {
+    return this._entries.some(
+      (m) =>
+        m !== except && ((m.source && this._resolveIframeMediaSrc(m.source)) || m.el.src) === src,
+    );
+  }
+
   private _repointToSource(entry: ProxyEntry): boolean {
     const src = entry.source ? this._resolveIframeMediaSrc(entry.source) : null;
     if (!src || entry.el.src === src) return false;
+    if (this._urlTaken(src, entry)) {
+      this._removeEntry(entry);
+      return false;
+    }
     entry.el.src = src;
     entry.el.load();
     return true;
   }
 
   private _detachIframeMedia(iframeEl: HTMLMediaElement): void {
-    const src = this._resolveIframeMediaSrc(iframeEl);
-    const idx = this._entries.findIndex(
-      (m) => m.source === iframeEl || (!!src && m.el.src === src),
-    );
-    if (idx === -1) return;
-    const entry = this._entries[idx];
+    const entry = this._entries.find((m) => m.source === iframeEl);
+    if (entry) this._removeEntry(entry);
+  }
+
+  private _removeEntry(entry: ProxyEntry): void {
     entry.el.pause();
     entry.el.src = "";
-    this._entries.splice(idx, 1);
+    this._entries.splice(this._entries.indexOf(entry), 1);
   }
 
   private _observeDynamicMedia(doc: Document): void {

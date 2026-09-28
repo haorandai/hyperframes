@@ -250,6 +250,66 @@ describe("ParentMediaManager following its clips", () => {
     expect(mgr.entries.map((m) => m.el.src)).toEqual([copy]);
   });
 
+  it("keeps one proxy per file when a clip is re-pointed at another clip's file", async () => {
+    const mgr = makeManager();
+    adoptedClip(mgr, "https://example.test/a.mov");
+    const b = adoptedClip(mgr, "https://example.test/b.mov");
+    mgr.promoteToParentProxy(document);
+    b.setAttribute("src", "https://example.test/a.mov");
+    await flushObserver();
+
+    expect(mgr.entries.map((m) => m.el.src)).toEqual(["https://example.test/a.mov"]);
+  });
+
+  it("keeps one proxy per file when the parent takes over after such a re-point", async () => {
+    const mgr = makeManager();
+    adoptedClip(mgr, "https://example.test/a.mov");
+    const b = adoptedClip(mgr, "https://example.test/b.mov");
+    b.setAttribute("src", "https://example.test/a.mov");
+    await flushObserver();
+
+    mgr.promoteToParentProxy(document);
+
+    expect(mgr.entries.map((m) => m.el.src)).toEqual(["https://example.test/a.mov"]);
+  });
+
+  const files = (mgr: ParentMediaManager) => mgr.entries.map((m) => m.el.src).sort();
+
+  it("keeps both proxies when two clips swap files while the parent owns playback", async () => {
+    const mgr = makeManager();
+    const a = adoptedClip(mgr, "https://example.test/a.mov");
+    const b = adoptedClip(mgr, "https://example.test/b.mov");
+    mgr.promoteToParentProxy(document);
+    a.setAttribute("src", "https://example.test/b.mov");
+    b.setAttribute("src", "https://example.test/a.mov");
+    await flushObserver();
+
+    expect(files(mgr)).toEqual(["https://example.test/a.mov", "https://example.test/b.mov"]);
+  });
+
+  it("keeps both proxies when two clips swap or chain files before the parent takes over", async () => {
+    const mgr = makeManager();
+    const a = adoptedClip(mgr, "https://example.test/a.mov");
+    const b = adoptedClip(mgr, "https://example.test/b.mov");
+    a.setAttribute("src", "https://example.test/b.mov");
+    b.setAttribute("src", "https://example.test/c.mov");
+    await flushObserver();
+
+    mgr.promoteToParentProxy(document);
+
+    expect(files(mgr)).toEqual(["https://example.test/b.mov", "https://example.test/c.mov"]);
+  });
+
+  it("keeps the proxy of a clip when another clip on the same file leaves", async () => {
+    const mgr = makeManager();
+    adoptedClip(mgr, "https://example.test/a.mov");
+    const twin = adoptedClip(mgr, "https://example.test/a.mov");
+    twin.remove();
+    await flushObserver();
+
+    expect(files(mgr)).toEqual(["https://example.test/a.mov"]);
+  });
+
   it("drops the proxy of a re-pointed clip when the clip leaves", async () => {
     const mgr = makeManager();
     const clip = adoptedClip(mgr, "https://example.test/clip.mov");
