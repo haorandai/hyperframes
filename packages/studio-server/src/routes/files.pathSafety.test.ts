@@ -321,6 +321,7 @@ describe("resolveProjectPath why", () => {
 
     await expectProjectGone(response, project);
     expect(startRender).not.toHaveBeenCalled();
+    expect(existsSync(adapter.rendersDir({ id: "demo", dir: project }))).toBe(false);
   });
 
   it("reports a missing project directory as 404, not 403", async () => {
