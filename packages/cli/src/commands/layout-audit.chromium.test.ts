@@ -2,6 +2,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import puppeteer, { type Browser } from "puppeteer-core";
 
+declare global {
+  interface Window {
+    __hyperframesLayoutAudit(options: { time: number; tolerance: number }): { code: string }[];
+  }
+}
+
 const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
 const script = readFileSync(new URL("./layout-audit.browser.js", import.meta.url), "utf8");
 
@@ -65,8 +71,8 @@ describe.runIf(executablePath)("layout audit in Chromium", () => {
           </div>
         </div></body>`);
       await page.addScriptTag({ content: script });
-      const issues: { code: string }[] = await page.evaluate(
-        "window.__hyperframesLayoutAudit({ time: 1, tolerance: 2 })",
+      const issues = await page.evaluate(() =>
+        window.__hyperframesLayoutAudit({ time: 1, tolerance: 2 }),
       );
       expect(issues.some((issue) => issue.code === "text_box_overflow")).toBe(error);
     } finally {

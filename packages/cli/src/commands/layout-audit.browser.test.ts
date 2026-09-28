@@ -732,7 +732,10 @@ describe("layout-audit.browser", () => {
       <div id="root" data-composition-id="main" data-width="640" data-height="360">
         <div id="card"><div id="headline">HELLO</div></div>
       </div>`;
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    const contextSpy = vi.spyOn(HTMLCanvasElement.prototype, "getContext") as unknown as {
+      mockReturnValue(value: CanvasRenderingContext2D): void;
+    };
+    contextSpy.mockReturnValue({
       font: "",
       measureText: () => ({
         fontBoundingBoxAscent: 115,
