@@ -37,7 +37,12 @@ const paths = (root: string, found: FoundProject[]) =>
 
 describe("findProjects", () => {
   it("finds a folder with index.html and a project marker, and nothing else", async () => {
-    const root = tree(["film/index.html", "film/meta.json", "site/index.html", "notes/project.json"]);
+    const root = tree([
+      "film/index.html",
+      "film/meta.json",
+      "site/index.html",
+      "notes/project.json",
+    ]);
 
     const found = await find(root);
 
