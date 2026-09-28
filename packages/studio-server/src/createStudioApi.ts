@@ -31,19 +31,16 @@ export function createStudioApi(adapter: StudioApiAdapter): Hono {
     await next();
     if (isProjectRootMissing(c.error)) replaceWithProjectDirMissing(c, hostHeaders);
   });
-  // A project request that fails after its folder vanished answers that the folder is gone.
   api.use("/projects/:id/*", async function answerProjectDirMissingForVanishedFolder(c, next) {
-    // Looked up first: once the folder is gone, some hosts no longer resolve the project.
-    // ponytail: one extra lookup per project request; memoize per request if an adapter makes it costly.
     const hostHeaders = new Headers(c.res.headers);
-    let dir: string | undefined;
-    try {
-      dir = (await adapter.resolveProject(c.req.param("id")))?.dir;
-    } catch {
-      // The route runs its own lookup and reports that failure.
-    }
+    const dirBeforeRoute = await Promise.resolve()
+      .then(() => adapter.resolveProject(c.req.param("id")))
+      .then(
+        (project) => project?.dir,
+        () => undefined,
+      );
     await next();
-    if (c.res.status >= 403 && dir && !existsSync(dir))
+    if (c.res.status >= 403 && dirBeforeRoute && !existsSync(dirBeforeRoute))
       replaceWithProjectDirMissing(c, hostHeaders);
   });
 
