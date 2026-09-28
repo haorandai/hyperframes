@@ -55,8 +55,9 @@ export interface TimelineElement {
   playbackRate?: number;
   sourceDuration?: number;
   volume?: number;
-  /** `data-has-audio="true"` on a video: its sound is mixed, so it takes audio affordances (fades). */
+  /** A video whose sound is mixed (`data-has-audio`, or unmuted without it), so it takes audio affordances (fades). */
   hasAudio?: boolean;
+  muted?: boolean;
   /** Clip-edge fades from `data-fade-in` / `data-fade-out`, seconds; absent means none. */
   fadeIn?: number;
   fadeOut?: number;

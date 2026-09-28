@@ -14,7 +14,14 @@ export function timelineElementsChanged(
       element.start !== prior.start ||
       element.duration !== prior.duration ||
       element.track !== prior.track ||
-      element.sourceDuration !== prior.sourceDuration
+      element.sourceDuration !== prior.sourceDuration ||
+      element.muted !== prior.muted ||
+      element.hasAudio !== prior.hasAudio ||
+      element.volume !== prior.volume ||
+      element.playbackRate !== prior.playbackRate ||
+      element.hidden !== prior.hidden ||
+      element.audioGroupVolume !== prior.audioGroupVolume ||
+      element.audioGroupHidden !== prior.audioGroupHidden
     );
   });
 }

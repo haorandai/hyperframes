@@ -526,3 +526,40 @@ describe("a composition clip's source length", () => {
     expect(card?.sourceDuration).toBeUndefined();
   });
 });
+
+describe("what the live clip list says a clip plays", () => {
+  function manifestVideo(attrs: string): TimelineElement {
+    const doc = makeDoc(
+      `<div data-composition-id="root"><video id="v" src="a.mp4" data-start="0" data-duration="4" ${attrs}></video></div>`,
+    );
+    return createTimelineElementFromManifestClip({
+      clip: {
+        id: "v",
+        label: "v",
+        kind: "video",
+        tagName: "video",
+        start: 0,
+        duration: 4,
+        track: 0,
+        assetUrl: null,
+      },
+      fallbackIndex: 0,
+      doc,
+      hostEl: doc.getElementById("v"),
+    });
+  }
+
+  it("carries data-volume and muted from the element", () => {
+    expect(manifestVideo('data-volume="0" muted')).toMatchObject({ volume: 0, muted: true });
+    const plain = manifestVideo("");
+    expect(plain.volume).toBeUndefined();
+    expect(plain.muted).toBeUndefined();
+  });
+
+  it("hears a video with neither muted nor data-has-audio, as the compiler does", () => {
+    expect(manifestVideo("").hasAudio).toBe(true);
+    expect(manifestVideo("muted").hasAudio).toBeUndefined();
+    expect(manifestVideo('data-has-audio="false"').hasAudio).toBeUndefined();
+    expect(manifestVideo('muted data-has-audio="true"').hasAudio).toBe(true);
+  });
+});
