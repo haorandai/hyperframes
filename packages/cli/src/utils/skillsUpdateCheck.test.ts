@@ -17,9 +17,11 @@ vi.mock("../telemetry/config.js", () => ({
   },
 }));
 
+const gate = vi.hoisted(() => ({ suppressed: false, answers: true }));
 vi.mock("./updateCheck.js", () => ({
-  updateNoticesSuppressed: () => false,
+  updateNoticesSuppressed: () => gate.suppressed,
 }));
+vi.mock("./hostAnswers.js", () => ({ hostAnswers: async () => gate.answers }));
 
 const mockCheckSkills = vi.fn();
 vi.mock("./skillsManifest.js", () => ({
@@ -31,9 +33,24 @@ describe("skillsUpdateCheck", () => {
     vi.resetModules();
     config = {};
     mockCheckSkills.mockReset();
+    gate.suppressed = false;
+    gate.answers = true;
+    vi.stubEnv("HYPERFRAMES_SKIP_SKILLS", "");
   });
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it.each([
+    ["HYPERFRAMES_SKIP_SKILLS is set", () => vi.stubEnv("HYPERFRAMES_SKIP_SKILLS", "1")],
+    ["the run shows no notices", () => (gate.suppressed = true)],
+    ["DNS does not answer", () => (gate.answers = false)],
+  ])("does not check skills when %s", async (_, arrange) => {
+    arrange();
+    const { checkSkillsForUpdate } = await import("./skillsUpdateCheck.js");
+    await checkSkillsForUpdate(true);
+    expect(mockCheckSkills).not.toHaveBeenCalled();
   });
 
   it("refreshSkillsCache persists the removed count alongside outdated/missing", async () => {
@@ -79,6 +96,12 @@ describe("skillsUpdateCheck", () => {
     expect(writeSpy).toHaveBeenCalledTimes(1);
     return String(writeSpy.mock.calls[0]?.[0]);
   }
+
+  it("suppresses a cached stale-skills notice in an attended plugin run", async () => {
+    vi.stubEnv("HYPERFRAMES_SKIP_SKILLS", "1");
+    // The normal notice gate permits output (the attended TTY case).
+    expect(await noticeTextFor({ skillsOutdatedCount: 2, skillsMissingCount: 1 })).toBeNull();
+  });
 
   it("the cached nudge total counts removed skills, not just outdated/missing", async () => {
     // Cache pre-populated as if a prior refreshSkillsCache had run — only
