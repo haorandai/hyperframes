@@ -1276,7 +1276,7 @@ async function fetchGoogleFontStylesheet(
   // A variable face is `font-weight: 400 900`: one file for every weight in
   // the span. Keeping only the first number leaves 600/700/800 on the network.
   const faceRegex =
-    /@font-face\s*\{[^}]*font-style:\s*(normal|italic)[^}]*font-weight:\s*(\d+(?:\s+\d+)?)[^}]*src:\s*url\(([^)]+)\)\s*format\(['"]woff2['"]\)(?:[^}]*?unicode-range:\s*([^;}]+))?[^}]*\}/gi;
+    /@font-face\s*\{[^}]*font-style:\s*(normal|italic|oblique(?:\s+-?\d+(?:\.\d+)?deg){0,2})\s*;[^}]*font-weight:\s*(\d+(?:\s+\d+)?)[^}]*src:\s*url\(([^)]+)\)\s*format\(['"]woff2['"]\)(?:[^}]*?unicode-range:\s*([^;}]+))?[^}]*\}/gi;
 
   const faces: GoogleFontFace[] = [];
 
