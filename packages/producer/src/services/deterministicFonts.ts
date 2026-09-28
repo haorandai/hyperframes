@@ -1561,7 +1561,7 @@ export async function injectDeterministicFontFaces(
     fetchOptions,
     extractGoogleFontsText(html),
   );
-  // A fallback-only family that no source serves is tolerated; fetch failures threw above.
+  // An optional family that no source serves is tolerated; fetch failures threw above.
   const required = unresolved.filter(
     (family) => !pendingFamilies.get(family.toLowerCase())?.optional,
   );

@@ -405,6 +405,16 @@ describe("fail-closed fonts named only in an undefined var() fallback", () => {
     expect(result).toBe(html);
   });
 
+  it("keeps a family named after a leading var() required", async () => {
+    const caught = await rejectedError(
+      injectDeterministicFontFaces(
+        styled(`body { font-family: var(--unset, Inter), "Acme Brand Sans", serif; }`),
+        { failClosedFontFetch: true, allowSystemFontCapture: false, fetchImpl: makeHttp400Fetch() },
+      ),
+    );
+    expect((caught as FontFetchError).familyName).toContain("Acme Brand Sans");
+  });
+
   it("keeps a family required behind one defined var()", async () => {
     const caught = await rejectedError(
       injectDeterministicFontFaces(
