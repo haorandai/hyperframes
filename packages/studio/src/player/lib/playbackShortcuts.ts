@@ -41,6 +41,18 @@ export function shouldIgnorePlaybackShortcutTarget(target: EventTarget | null): 
   );
 }
 
+const MODAL_DIALOG_SELECTOR = "dialog:modal, [role='dialog'][aria-modal='true']";
+
+// An open modal owns the keyboard wherever focus sits, preview iframe included.
+// checkVisibility skips dialogs left mounted but hidden; inert ones take no input.
+function isModalDialogOpen(): boolean {
+  const doc = globalThis.document;
+  if (!doc) return false;
+  return Array.from(doc.querySelectorAll(MODAL_DIALOG_SELECTOR)).some(
+    (dialog) => dialog.checkVisibility({ visibilityProperty: true }) && !dialog.closest("[inert]"),
+  );
+}
+
 interface PlaybackShortcutCaptionState {
   isCaptionEditMode: boolean;
   selectedCaptionSegmentCount: number;
@@ -60,6 +72,7 @@ export function shouldIgnorePlaybackShortcutEvent(
 ): boolean {
   if (event.metaKey || event.ctrlKey || event.altKey) return true;
   if (shouldIgnorePlaybackShortcutTarget(event.target)) return true;
+  if (isModalDialogOpen()) return true;
   return (
     PLAYBACK_FRAME_STEP_CODES.has(event.code) &&
     captionState.isCaptionEditMode &&
