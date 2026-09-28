@@ -120,7 +120,10 @@ export function realProjectRoot(root: string): string {
   }
 }
 
-/** Creates `dir` below `root` one folder at a time, so a root moved away fails instead of reappearing; a `dir` outside `root` still needs `root`. */
+/**
+ * Creates `dir` below `root` one folder at a time, so a root moved away fails instead of reappearing.
+ * A `dir` outside `root` is created recursively, but only while `root` exists.
+ */
 export function mkdirWithinProject(root: string, dir: string): void {
   if (!existsSync(root)) throw new ProjectRootMissingError(root);
   const inside = relative(resolve(root), resolve(dir));
